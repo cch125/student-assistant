@@ -8,6 +8,8 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
+from multimodal.media_library import public_media_library
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 VERSION_FILE = PROJECT_ROOT / "VERSION"
@@ -25,6 +27,8 @@ RECOMMENDED_RETRIEVAL = PROJECT_ROOT / "config" / "recommended_retrieval.json"
 RECOMMENDED_CORE_RETRIEVAL = PROJECT_ROOT / "config" / "recommended_core_retrieval.json"
 CORE_RETRIEVAL_BENCHMARK = PROJECT_ROOT / "config" / "core_retrieval_benchmark.json"
 QUALITY_GATE = PROJECT_ROOT / "outputs" / "quality_gate.json"
+AUTOMATIC_UPDATE_STATUS = PROJECT_ROOT / "outputs" / "automatic_update_status.json"
+AUTOMATIC_SCHEDULER_STATUS = PROJECT_ROOT / "outputs" / "automatic_scheduler_status.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
 CATEGORIES_CONFIG = PROJECT_ROOT / "config" / "categories.json"
 SEEDS_CONFIG = PROJECT_ROOT / "config" / "seeds.json"
@@ -327,6 +331,9 @@ def build_dashboard() -> str:
     recommended_core = read_json(RECOMMENDED_CORE_RETRIEVAL, {})
     core_benchmark = read_json(CORE_RETRIEVAL_BENCHMARK, {})
     quality_gate = read_json(QUALITY_GATE, {})
+    automatic_update = read_json(AUTOMATIC_UPDATE_STATUS, {})
+    automatic_scheduler = read_json(AUTOMATIC_SCHEDULER_STATUS, {})
+    media_library = public_media_library()
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
     mineru_events = read_jsonl(MINERU_MANIFEST)
@@ -341,6 +348,51 @@ def build_dashboard() -> str:
     mineru_success = sum(1 for row in mineru_rows if row.get("status") == "success")
     mineru_failed = sum(1 for row in mineru_rows if row.get("status") == "failed")
     mineru_unsupported = sum(1 for row in mineru_rows if row.get("status") == "unsupported")
+    media_summary = media_library.get("summary", {})
+    visually_enriched = sum(bool(item.get("visual_description")) for item in media_library.get("items", []))
+    media_gallery_html = "\n".join(
+        f"""
+        <figure class="media-card">
+          <a href="{esc(item.get('url'))}" target="_blank" rel="noreferrer">
+            <img src="{esc(item.get('url'))}" alt="{esc(item.get('caption') or '文档图片')}" loading="lazy">
+          </a>
+          <figcaption>
+            <strong>{esc(item.get('title'))}</strong>
+            <span>{esc('图像' if item.get('type') == 'image' else '表格')} · 第 {esc(item.get('page') or '?')} 页</span>
+            <span>{esc(item.get('caption'))}</span>
+          </figcaption>
+        </figure>
+        """
+        for item in media_library.get("items", [])
+    ) or '<p class="note">当前 MinerU 结果中没有可展示的图片。</p>'
+
+    update_state_labels = {
+        "running": "运行中",
+        "success": "成功",
+        "failed": "失败",
+        "warning": "有警告",
+    }
+    automatic_stage_rows = "\n".join(
+        f"""
+        <tr>
+          <td>{esc(stage.get('name'))}</td>
+          <td>{esc(update_state_labels.get(stage.get('state'), stage.get('state')))}</td>
+          <td>{esc(stage.get('duration_seconds') if stage.get('duration_seconds') is not None else '-')}</td>
+          <td>{esc(stage.get('error') or '')}</td>
+        </tr>
+        """
+        for stage in automatic_update.get("stages", [])
+    ) or '<tr><td colspan="4">定时更新尚未执行</td></tr>'
+    update_changes = automatic_update.get("changes", {})
+    automatic_update_html = f"""
+      <div class="metric-grid">
+        <b>{esc(update_state_labels.get(automatic_update.get('state'), automatic_update.get('state') or '待执行'))}<small>最近状态</small></b>
+        <b>{esc(len(update_changes.get('added', [])))}<small>新增文档</small></b>
+        <b>{esc(len(update_changes.get('changed', [])))}<small>更新文档</small></b>
+      </div>
+      <p class="note">计划：{esc(automatic_scheduler.get('schedule') or '每日 03:00')} · 下次运行：{esc(automatic_scheduler.get('next_run_at') or '-')} · 最近完成：{esc(automatic_update.get('finished_at') or '-')}</p>
+      <div class="scroll"><table><thead><tr><th>阶段</th><th>状态</th><th>耗时(秒)</th><th>说明</th></tr></thead><tbody>{automatic_stage_rows}</tbody></table></div>
+    """
 
     raw_pages = [row for row in raw_rows if row.get("kind") == "page"]
     raw_attachments = [row for row in raw_rows if row.get("kind") == "attachment"]
@@ -796,6 +848,12 @@ def build_dashboard() -> str:
     .quality-list em {{ color: var(--warn); font-style: normal; margin-top: 6px; font-size: 13px; }}
     .note {{ color: var(--muted); line-height: 1.7; margin: 0 0 14px; }}
     .ragflow-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
+    .media-gallery {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }}
+    .media-card {{ margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fbfcfe; }}
+    .media-card a {{ display: block; background: #f4f6f8; }}
+    .media-card img {{ display: block; width: 100%; height: 210px; object-fit: contain; }}
+    .media-card figcaption {{ display: grid; gap: 5px; padding: 10px 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }}
+    .media-card figcaption strong {{ color: var(--text); font-size: 13px; }}
     .ragflow-card {{ border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: #fbfcfe; }}
     .ragflow-card h3 {{ margin: 0 0 12px; font-size: 16px; }}
     .metric-row {{ display: grid; gap: 4px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }}
@@ -820,21 +878,59 @@ def build_dashboard() -> str:
     .priority-高 {{ background: #fff1f3; color: #c01048; }}
     .priority-中 {{ background: #fffaeb; color: #b54708; }}
     .priority-低 {{ background: #eef4ff; color: #3538cd; }}
+    /* Operational dashboard shell: dense, calm, and easy to scan repeatedly. */
+    body {{ background: #eef1f4; }}
+    header {{ position: sticky; top: 0; z-index: 30; padding: 0; box-shadow: 0 1px 0 rgba(16, 24, 40, .04); }}
+    .dashboard-head {{ max-width: 1280px; min-height: 72px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }}
+    .dashboard-brand {{ display: flex; align-items: center; gap: 12px; min-width: 0; }}
+    .dashboard-mark {{ width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; background: var(--brand); color: #fff; font-weight: 800; }}
+    .dashboard-title {{ min-width: 0; }}
+    .dashboard-title h1 {{ margin: 0 0 3px; font-size: 19px; }}
+    .dashboard-title p {{ font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .dashboard-nav {{ display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafc; }}
+    .dashboard-nav a {{ min-height: 34px; display: inline-flex; align-items: center; padding: 0 11px; border-radius: 5px; color: #475467; font-size: 13px; font-weight: 700; text-decoration: none; }}
+    .dashboard-nav a.active {{ color: #fff; background: var(--brand); }}
+    main {{ max-width: 1280px; margin: 20px auto 48px; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(16, 24, 40, .05); }}
+    section {{ margin: 0; padding: 26px 28px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: none; }}
+    section:last-child {{ border-bottom: 0; }}
+    section > h2 {{ display: flex; align-items: center; gap: 8px; }}
+    section > h2::before {{ content: ""; width: 3px; height: 17px; border-radius: 2px; background: var(--brand); }}
+    .step, .ragflow-card, .coverage-metric {{ box-shadow: none; background: #fafbfc; }}
+    .step {{ min-height: 138px; }}
+    .num {{ border-radius: 6px; }}
+    .metric-grid b {{ border: 1px solid #cfe4df; background: #f4fbf9; }}
+    .scroll {{ scrollbar-color: #aab4c3 #f2f4f7; }}
+    th {{ z-index: 1; }}
     @media (max-width: 980px) {{
-      main {{ padding: 14px; }}
+      .dashboard-head {{ align-items: stretch; flex-direction: column; padding: 12px 14px; }}
+      .dashboard-nav {{ align-self: flex-start; }}
+      main {{ margin: 12px; border-radius: 8px; }}
+      section {{ padding: 20px 16px; }}
       .steps, .grid, .ragflow-grid, .coverage-metrics {{ grid-template-columns: 1fr; }}
+      .metric-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
 <body>
   <header>
-    <h1>暨南大学学生助手 · 数据流程可视化</h1>
-    <p>版本 v{esc(project_version)} · 从官网采集到 RAGFlow 服务卡片，每一步的输入、输出和质量检查都在这里。</p>
+    <div class="dashboard-head">
+      <div class="dashboard-brand">
+        <div class="dashboard-mark">暨</div>
+        <div class="dashboard-title"><h1>数据流程看板</h1><p>暨南大学学生助手 · 版本 v{esc(project_version)} · 采集、清洗、解析与检索状态</p></div>
+      </div>
+      <nav class="dashboard-nav" aria-label="主导航"><a href="/">学生助手</a><a class="active" href="/pipeline">数据看板</a></nav>
+    </div>
   </header>
   <main>
     <section>
       <h2>流程总览</h2>
       <div class="steps">{steps_html}</div>
+    </section>
+
+    <section>
+      <h2>自动更新</h2>
+      <p class="note">系统会定期发现暨南大学官网新页面和附件，依次完成清洗、MinerU 解析、视觉语义标注、质量检查和 RAGFlow 增量同步。</p>
+      {automatic_update_html}
     </section>
 
     <section class="grid">
@@ -917,6 +1013,12 @@ def build_dashboard() -> str:
           <tbody>{mineru_rows_html}</tbody>
         </table>
       </div>
+    </section>
+
+    <section>
+      <h2>多模态资源</h2>
+      <p class="note">已关联 {esc(media_summary.get('documents', 0))} 份文档、{esc(media_summary.get('media', 0))} 个视觉单元，其中图片 {esc(media_summary.get('images', 0))} 个、表格截图 {esc(media_summary.get('tables', 0))} 个，已有 {esc(visually_enriched)} 个视觉单元完成语义标注。点击缩略图可查看 MinerU 提取的原图。</p>
+      <div class="media-gallery">{media_gallery_html}</div>
     </section>
 
     <section>

@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.10.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+当前版本：`v0.11.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -13,6 +13,13 @@
 
 如果知识库没有明确来源，助手会拒绝猜测，避免误导学生。
 
+## 版本下载
+
+- [GitHub Releases](https://github.com/cch125/student-assistant/releases)：按版本查看说明并下载 Source code ZIP/TAR.GZ。
+- [GitHub Tags](https://github.com/cch125/student-assistant/tags)：查看全部历史标签和对应源码。
+
+仓库只保存代码、配置和可复现说明。官网原始数据、MinerU 生成物、RAGFlow 数据和本机密钥不会包含在源码压缩包中。
+
 ## 当前状态
 
 已跑通第一阶段流程：
@@ -21,7 +28,9 @@
 - 数据清洗
 - 服务卡片生成
 - RAGFlow 知识库导入
-- 本地简约问答页面
+- 支持文字、官方附件和 MinerU 图片的问答页面
+- 数据采集、清洗、视觉标注与同步看板
+- 每日自动增量更新
 - 未命中问题记录
 
 当前核心服务卡片覆盖 34 个事项，包含：
@@ -93,6 +102,8 @@ python visualize_pipeline.py
 ```text
 http://127.0.0.1:8090/pipeline
 ```
+
+助手与看板是同一个 Web 系统，可通过顶部导航相互切换。团队共享时推荐部署为 HTTPS 网页；内测可先使用 Tailscale 或 Cloudflare Tunnel，正式使用建议部署到固定服务器并配置域名、反向代理和访问控制。
 
 覆盖报告 JSON：
 

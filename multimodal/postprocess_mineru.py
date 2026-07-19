@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import re
@@ -15,7 +16,8 @@ MINERU_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "manifest.jsonl
 OUTPUT_DIR = PROJECT_ROOT / "data" / "cleaned" / "multimodal"
 RAGFLOW_DIR = PROJECT_ROOT / "data" / "cleaned" / "multimodal_ragflow"
 OUTPUT_MANIFEST = OUTPUT_DIR / "manifest.jsonl"
-PROCESSOR_VERSION = "1.1"
+VISUAL_ANNOTATIONS = PROJECT_ROOT / "data" / "cleaned" / "multimodal_visual" / "annotations.json"
+PROCESSOR_VERSION = "1.2"
 
 DROP_TYPES = {"page_number"}
 DECORATIVE_PATTERNS = [
@@ -111,7 +113,16 @@ def page_text_context(items: list[dict], target_index: int, window: int = 2) -> 
     return [normalize_text(items[index].get("text")) for index in before + after]
 
 
-def clean_document(row: dict) -> tuple[dict, str]:
+def load_visual_annotations() -> dict[str, dict]:
+    if not VISUAL_ANNOTATIONS.exists():
+        return {}
+    try:
+        return json.loads(VISUAL_ANNOTATIONS.read_text(encoding="utf-8")).get("annotations", {})
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def clean_document(row: dict, visual_annotations: dict[str, dict]) -> tuple[dict, str]:
     content_path = find_content_list(row)
     items = json.loads(content_path.read_text(encoding="utf-8"))
     source_sha = row["sha256"]
@@ -211,6 +222,24 @@ def clean_document(row: dict) -> tuple[dict, str]:
 
         removed.append({**trace, "type": kind, "reason": "unsupported-content-type"})
 
+    for unit in units:
+        if unit["type"] not in {"image", "table"}:
+            continue
+        annotation = visual_annotations.get(f"{source_sha}:{unit['unit_id']}")
+        if not annotation:
+            continue
+        unit["visual_description"] = normalize_text(annotation.get("description"))
+        unit["visual_visible_text"] = normalize_text(annotation.get("visible_text"))
+        unit["visual_key_elements"] = [
+            normalize_text(value) for value in annotation.get("key_elements", []) if normalize_text(value)
+        ]
+        unit["visual_keywords"] = [
+            normalize_text(value) for value in annotation.get("retrieval_keywords", []) if normalize_text(value)
+        ]
+        unit["visual_caution"] = normalize_text(annotation.get("caution"))
+        unit["visual_model"] = annotation.get("model")
+        unit["visual_generated_at"] = annotation.get("generated_at")
+
     title = next(
         (unit["text"] for unit in units if unit["type"] == "text" and unit.get("heading_level") == 1),
         next((unit["text"] for unit in units if unit["type"] == "text"), Path(row["source"]).stem),
@@ -230,6 +259,7 @@ def clean_document(row: dict) -> tuple[dict, str]:
             "text_units": sum(unit["type"] == "text" for unit in units),
             "table_units": sum(unit["type"] == "table" for unit in units),
             "image_units": sum(unit["type"] == "image" for unit in units),
+            "visually_enriched_units": sum(bool(unit.get("visual_description")) for unit in units),
         },
         "units": units,
         "removed": removed,
@@ -261,6 +291,10 @@ def clean_document(row: dict) -> tuple[dict, str]:
                     f"### 表格 `{unit['unit_id']}`",
                     f"上下文：{'；'.join(unit['context']) or '无'}",
                     *([f"表题：{'；'.join(unit['caption'])}"] if unit["caption"] else []),
+                    *([f"视觉描述：{unit['visual_description']}"] if unit.get("visual_description") else []),
+                    *([f"可见文字：{unit['visual_visible_text']}"] if unit.get("visual_visible_text") else []),
+                    *([f"视觉关键词：{'、'.join(unit['visual_keywords'])}"] if unit.get("visual_keywords") else []),
+                    *([f"视觉注意：{unit['visual_caution']}"] if unit.get("visual_caution") else []),
                     unit["html"],
                     "",
                     "```json",
@@ -275,6 +309,11 @@ def clean_document(row: dict) -> tuple[dict, str]:
                     f"### 图像 `{unit['unit_id']}`",
                     f"图注：{'；'.join(unit['caption']) or '无显式图注'}",
                     f"上下文：{'；'.join(unit['context']) or '无'}",
+                    *([f"视觉描述：{unit['visual_description']}"] if unit.get("visual_description") else []),
+                    *([f"可见文字：{unit['visual_visible_text']}"] if unit.get("visual_visible_text") else []),
+                    *([f"视觉要素：{'、'.join(unit['visual_key_elements'])}"] if unit.get("visual_key_elements") else []),
+                    *([f"视觉关键词：{'、'.join(unit['visual_keywords'])}"] if unit.get("visual_keywords") else []),
+                    *([f"视觉注意：{unit['visual_caution']}"] if unit.get("visual_caution") else []),
                     f"图像文件：{unit['image_path']}",
                     "",
                 ]
@@ -283,8 +322,12 @@ def clean_document(row: dict) -> tuple[dict, str]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Associate and clean MinerU text, tables, and images.")
+    parser.add_argument("--refresh", action="store_true")
+    args = parser.parse_args()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     RAGFLOW_DIR.mkdir(parents=True, exist_ok=True)
+    visual_annotations = load_visual_annotations()
     latest_output: dict[str, dict] = {
         row.get("source_file"): row for row in read_jsonl(OUTPUT_MANIFEST) if row.get("source_file")
     }
@@ -292,7 +335,8 @@ def main() -> None:
     for row in latest_successes():
         previous = latest_output.get(row["source"])
         if (
-            previous
+            not args.refresh
+            and previous
             and previous.get("source_sha256") == row.get("sha256")
             and previous.get("processor_version") == PROCESSOR_VERSION
             and previous.get("status") == "success"
@@ -300,7 +344,7 @@ def main() -> None:
             unchanged += 1
             continue
         try:
-            document, markdown = clean_document(row)
+            document, markdown = clean_document(row, visual_annotations)
             stem = f"multimodal__{Path(row['source']).stem.strip('_')}__{row['sha256'][:12]}"
             json_path = OUTPUT_DIR / f"{stem}.json"
             markdown_path = RAGFLOW_DIR / f"{stem}.md"

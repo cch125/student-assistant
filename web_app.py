@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 from collections import defaultdict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,9 +14,21 @@ from urllib.parse import urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "ragflow"))
+BOOT_LOG = PROJECT_ROOT / "data" / "feedback" / "web_startup.log"
 
+
+def boot_marker(message: str) -> None:
+    BOOT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with BOOT_LOG.open("a", encoding="utf-8") as file:
+        file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+
+boot_marker("Loading core services")
 from core_services import ask_core_service
+boot_marker("Loading multimodal media library")
+from multimodal.media_library import attach_media, public_media_library, resolve_public_file
+boot_marker("Loading pipeline dashboard")
 from visualize_pipeline import build_coverage_report, build_dashboard
+boot_marker("Imports ready")
 
 
 HOST = os.getenv("ASSISTANT_HOST", "127.0.0.1")
@@ -26,6 +39,15 @@ RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))
 RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 REQUEST_HISTORY: dict[str, deque[float]] = defaultdict(deque)
 REQUEST_LOCK = threading.Lock()
+STARTUP_LOG = BOOT_LOG
+
+
+def log(message: str) -> None:
+    STARTUP_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with STARTUP_LOG.open("a", encoding="utf-8") as file:
+        file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+    if os.getenv("ASSISTANT_CONSOLE_LOG") == "1" and sys.stdout is not None:
+        print(message)
 
 HTML = r"""<!doctype html>
 <html lang="zh-CN">
@@ -302,6 +324,34 @@ HTML = r"""<!doctype html>
       font-size: 13px;
       font-weight: 700;
     }
+    .media-block { margin: 16px 0; }
+    .media-block h3 { margin: 0 0 10px; font-size: 16px; }
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+    .media-item {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .media-item a { display: block; color: inherit; text-decoration: none; }
+    .media-item img {
+      display: block;
+      width: 100%;
+      height: 180px;
+      object-fit: contain;
+      background: #f7f8fa;
+    }
+    .media-item figcaption {
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
     details {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -388,6 +438,52 @@ HTML = r"""<!doctype html>
       .guide-body { grid-template-columns: 1fr; }
       .guide-field:nth-child(odd) { border-right: 0; }
     }
+    /* Public-facing shell: compact navigation, stable search, and readable results. */
+    body { background: #f2f4f7; }
+    header { position: sticky; top: 0; z-index: 20; box-shadow: 0 1px 0 rgba(16, 24, 40, .03); }
+    .topbar { max-width: 1180px; min-height: 68px; padding: 12px 24px; }
+    .mark { width: 40px; height: 40px; }
+    .brand-copy { display: grid; gap: 2px; min-width: 0; }
+    .brand-copy small { color: var(--muted); font-size: 12px; }
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .nav { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafc; }
+    .nav a { min-height: 34px; display: inline-flex; align-items: center; padding: 0 11px; border-radius: 5px; color: #475467; font-size: 13px; font-weight: 700; text-decoration: none; }
+    .nav a.active { color: #fff; background: var(--brand); }
+    .status { position: relative; padding: 7px 10px 7px 24px; border-radius: 6px; }
+    .status::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #12b76a; transform: translateY(-50%); }
+    main { max-width: 1180px; padding: 32px 24px 52px; grid-template-columns: minmax(0, 1fr) 280px; gap: 0; }
+    .workspace { min-height: 590px; padding: 28px; border-radius: 8px 0 0 8px; box-shadow: 0 8px 24px rgba(16, 24, 40, .05); }
+    .side { min-height: 590px; padding: 28px 22px; border-left: 0; border-radius: 0 8px 8px 0; box-shadow: 0 8px 24px rgba(16, 24, 40, .05); }
+    .section-kicker { margin: 0 0 6px; color: var(--brand-dark); font-size: 13px; font-weight: 700; }
+    .query-title { margin: 0 0 6px; font-size: 22px; line-height: 1.35; }
+    .query-copy { margin: 0 0 22px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .label { font-weight: 700; color: #344054; }
+    .ask-row { grid-template-columns: minmax(0, 1fr) 104px; }
+    input { min-height: 50px; padding: 13px 16px; border-color: #aeb9c8; }
+    button { min-height: 50px; transition: background .15s ease, box-shadow .15s ease, transform .15s ease; }
+    button:hover { box-shadow: 0 4px 10px rgba(15, 111, 100, .18); }
+    button:active { transform: translateY(1px); }
+    .answer { margin-top: 26px; padding-top: 24px; }
+    .answer h2 { font-size: 18px; }
+    .answer-text { max-width: 760px; font-size: 17px; }
+    .side h2 { font-size: 15px; }
+    .chips { gap: 7px; }
+    .chip { min-height: 0; width: 100%; text-align: left; line-height: 1.45; font-weight: 500; box-shadow: none; }
+    .chip:hover { color: var(--brand-dark); border-color: #88bdb5; background: #f4fbf9; box-shadow: none; }
+    .side-note { padding-top: 14px; border-top: 1px solid var(--line); font-size: 12px; }
+    .media-item img { aspect-ratio: 4 / 3; height: auto; min-height: 150px; }
+    .guardrail { border-left: 3px solid var(--accent); }
+    @media (max-width: 820px) {
+      .topbar { align-items: stretch; flex-direction: column; gap: 10px; }
+      .top-actions { justify-content: space-between; }
+      .status { display: none; }
+      main { grid-template-columns: 1fr; padding: 16px 12px 32px; }
+      .workspace { min-height: auto; padding: 20px 16px; border-radius: 8px 8px 0 0; }
+      .side { min-height: auto; padding: 20px 16px; border-top: 0; border-left: 1px solid var(--line); border-radius: 0 0 8px 8px; }
+      .query-title { font-size: 20px; }
+      .ask-row { grid-template-columns: 1fr; }
+      .media-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -395,13 +491,19 @@ HTML = r"""<!doctype html>
     <div class="topbar">
       <div class="brand">
         <div class="mark">暨</div>
-        <h1>暨南大学学生助手</h1>
+        <div class="brand-copy"><h1>暨南大学学生助手</h1><small>学生事务与官方材料检索</small></div>
       </div>
-      <div class="status">核心服务卡片知识库</div>
+      <div class="top-actions">
+        <nav class="nav" aria-label="主导航"><a class="active" href="/">学生助手</a><a href="/pipeline">数据看板</a></nav>
+        <div class="status">知识库在线</div>
+      </div>
     </div>
   </header>
   <main>
     <section class="workspace">
+      <p class="section-kicker">学生事务查询</p>
+      <h2 class="query-title">需要办理什么事情？</h2>
+      <p class="query-copy">输入事项名称或具体问题，助手会返回官方说明、附件下载和相关图片。</p>
       <label class="label" for="question">输入学生办事问题</label>
       <div class="ask-row">
         <input id="question" autocomplete="off" value="本科生请假申请表在哪里下载？" />
@@ -414,13 +516,14 @@ HTML = r"""<!doctype html>
     <aside class="side">
       <h2>推荐问题</h2>
       <div class="chips" id="examples">
-        <span class="chip">本科生请假申请表在哪里下载？</span>
-        <span class="chip">转专业申请表在哪里？</span>
-        <span class="chip">成绩单和在学证明怎么打印？</span>
-        <span class="chip">学生证遗失怎么补办？</span>
-        <span class="chip">新生保留入学资格申请表在哪里下载？</span>
+        <button type="button" class="chip">本科生请假申请表在哪里下载？</button>
+        <button type="button" class="chip">转专业申请表在哪里？</button>
+        <button type="button" class="chip">成绩单和在学证明怎么打印？</button>
+        <button type="button" class="chip">学生证遗失怎么补办？</button>
+        <button type="button" class="chip">新生保留入学资格申请表在哪里下载？</button>
+        <button type="button" class="chip">推免申请报名怎么操作？</button>
       </div>
-      <p class="empty">答案会优先保留知识库原文里的来源链接，避免模型改错网址或日期。</p>
+      <p class="empty side-note">答案仅依据已收录的官方材料；缺少可靠依据时会明确拒答并记录数据缺口。</p>
     </aside>
   </main>
   <script>
@@ -441,9 +544,20 @@ HTML = r"""<!doctype html>
       `).join("");
       const sourceIsDownload = (data.downloads || []).some(item => item.url === data.source_url);
       const source = data.source_url && !sourceIsDownload
-        ? `<a class="source-link" href="${escapeHtml(data.source_url)}" target="_blank" rel="noreferrer">查看官方说明</a>`
+        ? `<a class="source-link" href="${escapeHtml(data.source_url)}" target="_blank" rel="noreferrer">${escapeHtml(data.source_label || "查看官方说明")}</a>`
         : "";
       const actions = downloads || source ? `<div class="action-links">${downloads}${source}</div>` : "";
+      const mediaItems = (data.media || []).map(item => `
+        <figure class="media-item">
+          <a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">
+            <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.caption || "文档图片")}" loading="lazy" />
+            <figcaption>${escapeHtml(item.caption || "文档图片")}${item.page ? ` · 第 ${Number(item.page)} 页` : ""}</figcaption>
+          </a>
+        </figure>
+      `).join("");
+      const mediaBlock = data.ok && mediaItems ? `
+        <section class="media-block"><h3>相关图片</h3><div class="media-grid">${mediaItems}</div></section>
+      ` : "";
       const miniMeta = data.ok ? `
         <div class="mini-meta">
           ${guide.service_type ? `<span>${escapeHtml(guide.service_type)}</span>` : ""}
@@ -461,14 +575,21 @@ HTML = r"""<!doctype html>
           <a href="${escapeHtml(download.url)}" target="_blank" rel="noreferrer">直接下载：${escapeHtml(download.name)}</a>
         `).join("");
         const itemSource = item.source_url
-          ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">查看官方说明</a>`
+          ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">${escapeHtml(item.source_label || "查看官方说明")}</a>`
           : "";
+        const itemMedia = (item.media || []).slice(0, 2).map(medium => `
+          <figure class="media-item"><a href="${escapeHtml(medium.url)}" target="_blank" rel="noreferrer">
+            <img src="${escapeHtml(medium.url)}" alt="${escapeHtml(medium.caption || "文档图片")}" loading="lazy" />
+            <figcaption>${escapeHtml(medium.caption || "文档图片")}</figcaption>
+          </a></figure>
+        `).join("");
         return `
           <article class="related-item">
             <h4>${escapeHtml((item.document_name || "相关结果").replace(/\.md$/i, ""))}</h4>
             <div class="related-meta">相关度 ${Number(item.similarity || 0).toFixed(3)}</div>
             <p>${escapeHtml(item.answer || item.snippet || "")}</p>
             <div class="related-actions">${itemDownloads}${itemSource}</div>
+            ${itemMedia ? `<div class="media-grid">${itemMedia}</div>` : ""}
           </article>
         `;
       }).join("");
@@ -519,6 +640,7 @@ HTML = r"""<!doctype html>
         <p class="answer-text ${data.ok ? "" : "error"}">${escapeHtml(data.answer)}</p>
         ${guardrail}
         ${actions}
+        ${mediaBlock}
         ${miniMeta}
         ${relatedResults}
         ${guideCard}
@@ -568,7 +690,7 @@ HTML = r"""<!doctype html>
 
 class StudentAssistantHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
-        print(f"{self.address_string()} - {format % args}")
+        log(f"{self.address_string()} - {format % args}")
 
     def send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -600,6 +722,25 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/coverage":
             self.send_json(build_coverage_report())
+            return
+        if path == "/api/media-index":
+            self.send_json(public_media_library())
+            return
+        if path.startswith(("/media/", "/multimodal-source/")):
+            resolved = resolve_public_file(path)
+            if not resolved:
+                self.send_error(404)
+                return
+            file_path, mime_type = resolved
+            body = file_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f'inline; filename="{file_path.name}"')
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
             return
         if path == "/pipeline":
             body = build_dashboard().encode("utf-8")
@@ -641,9 +782,9 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
             if not question or len(question) > MAX_QUESTION_LENGTH:
                 self.send_json({"ok": False, "answer": "问题不能为空，且不能超过300个字符。"}, status=400)
                 return
-            result = ask_core_service(question)
+            result = attach_media(ask_core_service(question), question)
         except Exception as exc:
-            print(f"ask failed: {type(exc).__name__}: {exc}")
+            log(f"ask failed: {type(exc).__name__}: {exc}")
             self.send_json(
                 {
                     "ok": False,
@@ -660,10 +801,14 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    server = ThreadingHTTPServer((HOST, PORT), StudentAssistantHandler)
-    print(f"Student assistant is running at http://{HOST}:{PORT}")
-    print("Press Ctrl+C to stop.")
-    server.serve_forever()
+    try:
+        log(f"Starting student assistant on {HOST}:{PORT}")
+        server = ThreadingHTTPServer((HOST, PORT), StudentAssistantHandler)
+        log(f"Student assistant is running at http://{HOST}:{PORT}")
+        server.serve_forever()
+    except Exception:
+        log(traceback.format_exc())
+        raise
 
 
 if __name__ == "__main__":

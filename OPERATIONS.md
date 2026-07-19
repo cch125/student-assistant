@@ -27,16 +27,16 @@ python scripts\update_pipeline.py --max-pages 200 --depth 1 --max-pages-per-seed
 
 采集器为每个种子分配独立页数上限，避免单个部门占满全部额度。同步时会删除已被清洗规则淘汰的知识库文档，并替换内容哈希发生变化的文档。
 
-安装每周日 03:00 自动更新任务：
+安装登录后常驻的每日 03:00 自动更新守护进程：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_maintenance_task.ps1
 ```
 
-移除任务：
+守护进程会在电脑错过 03:00 时于下次登录后补跑。移除自动启动项：
 
 ```powershell
-Unregister-ScheduledTask -TaskName "JNU Student Assistant Weekly Refresh" -Confirm:$false
+Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\JNU Student Assistant Auto Refresh.lnk"
 ```
 
 ## 质量与检索验收

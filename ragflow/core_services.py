@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from import_experiment_pipelines import RagflowClient
+from multimodal.media_library import multimodal_document
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -183,11 +184,16 @@ def grounded_notice_fallback(rag: RagflowClient, question: str) -> dict[str, Any
         return None
     top = chunks[0]
     content = str(top.get("content") or top.get("content_with_weight") or "")
+    document_name = top.get("document_keyword") or top.get("document_name") or "官方通知"
+    multimodal = multimodal_document(str(document_name))
     source_match = re.search(r"(?:来源链接|来源)：\s*(https?://\S+)", content)
-    if not source_match:
-        return None
-    source_url = source_match.group(1).rstrip(".,，。)")
-    if not re.match(r"https?://(?:[^/]+\.)?jnu\.edu\.cn(?:/|$)", source_url, flags=re.I):
+    if source_match:
+        source_url = source_match.group(1).rstrip(".,，。)")
+        if not re.match(r"https?://(?:[^/]+\.)?jnu\.edu\.cn(?:/|$)", source_url, flags=re.I):
+            return None
+    elif multimodal and multimodal.get("source_url"):
+        source_url = str(multimodal["source_url"])
+    else:
         return None
     body = content.split("## 正文", 1)[-1]
     lines = [
@@ -206,20 +212,23 @@ def grounded_notice_fallback(rag: RagflowClient, question: str) -> dict[str, Any
     excerpt = " ".join(([title] if title else []) + paragraphs[:2])[:360].strip()
     if len(excerpt) < 30:
         return None
-    document_name = top.get("document_keyword") or top.get("document_name") or "官方通知"
     similarity = float(top.get("similarity") or 0)
+    media = list(multimodal.get("media", [])) if multimodal else []
+    is_multimodal = bool(multimodal)
     match = {
         "document_name": document_name,
         "similarity": similarity,
         "answer": excerpt,
         "source_url": source_url,
+        "source_label": "查看原始附件" if is_multimodal else "查看官方说明",
         "downloads": [],
+        "media": media,
         "guide": {
-            "category": "官方通知/资料",
-            "service_type": "原文摘录",
-            "department": "暨南大学官方来源",
+            "category": "多模态附件" if is_multimodal else "官方通知/资料",
+            "service_type": "MinerU 图文摘录" if is_multimodal else "原文摘录",
+            "department": "暨南大学附件" if is_multimodal else "暨南大学官方来源",
             "audience": "相关学生",
-            "entrance": "来源页面",
+            "entrance": "查看原始附件" if is_multimodal else "来源页面",
             "materials": "官方公开信息",
             "steps": [],
             "notes": ["这是知识库原文摘录，不对原文未明确的信息作推测。"],
@@ -230,7 +239,9 @@ def grounded_notice_fallback(rag: RagflowClient, question: str) -> dict[str, Any
         "ok": True,
         "answer": f"知识库找到相关官方材料，以下为原文摘录：{excerpt}",
         "source_url": source_url,
+        "source_label": "查看原始附件" if is_multimodal else "查看官方说明",
         "downloads": [],
+        "media": media,
         "document_name": document_name,
         "similarity": similarity,
         "matches": [match],
