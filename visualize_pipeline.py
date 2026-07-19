@@ -20,6 +20,8 @@ MINERU_IMPORT_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "ragflow
 OUTPUT_HTML = PROJECT_ROOT / "outputs" / "pipeline_dashboard.html"
 COVERAGE_JSON = PROJECT_ROOT / "outputs" / "coverage_report.json"
 EXPERIMENT_RESULTS = PROJECT_ROOT / "outputs" / "chunk_experiment_results.json"
+RETRIEVAL_BENCHMARK = PROJECT_ROOT / "config" / "retrieval_benchmark.json"
+RECOMMENDED_RETRIEVAL = PROJECT_ROOT / "config" / "recommended_retrieval.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
 CATEGORIES_CONFIG = PROJECT_ROOT / "config" / "categories.json"
 SEEDS_CONFIG = PROJECT_ROOT / "config" / "seeds.json"
@@ -312,6 +314,8 @@ def build_dashboard() -> str:
     service_cards = [parse_service_card(path) for path in sorted(SERVICE_CARD_DIR.glob("*.md"))] if SERVICE_CARD_DIR.exists() else []
     ragflow_status = load_ragflow_status()
     experiment_results = read_json(EXPERIMENT_RESULTS, {})
+    retrieval_benchmark = read_json(RETRIEVAL_BENCHMARK, {})
+    recommended_retrieval = read_json(RECOMMENDED_RETRIEVAL, {})
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
     mineru_events = read_jsonl(MINERU_MANIFEST)
@@ -536,6 +540,29 @@ def build_dashboard() -> str:
         """
         for key, item in sorted(experiment_summaries.items())
     ) or "<p class=\"note\">分块对照实验尚未运行。</p>"
+    separation = recommended_retrieval.get("score_separation", {})
+    tuning_html = (
+        f"""
+        <article class="ragflow-card">
+          <h3>推荐方案 {esc(recommended_retrieval.get('dataset_key'))}</h3>
+          <div class="metric-grid">
+            <b>{esc(recommended_retrieval.get('vector_similarity_weight'))}<small>向量权重</small></b>
+            <b>{esc(recommended_retrieval.get('similarity_threshold'))}<small>相似度阈值</small></b>
+            <b>{esc(recommended_retrieval.get('chunk_count'))}<small>分块</small></b>
+          </div>
+          <div class="parse-summary">
+            <span class="done">可回答 {esc(len(retrieval_benchmark.get('positive_cases', [])))} 题</span>
+            <span class="done">拒答 {esc(len(retrieval_benchmark.get('negative_cases', [])))} 题</span>
+            <span class="warn">安全间隔 {esc(round(float(separation.get('margin', 0)), 4))}</span>
+          </div>
+          <div class="link-row">
+            <a href="http://localhost:8080/dataset/files/{esc(recommended_retrieval.get('dataset_id'))}" target="_blank">打开推荐知识库</a>
+          </div>
+        </article>
+        """
+        if recommended_retrieval
+        else "<p class=\"note\">尚未运行检索参数自动调优。</p>"
+    )
     unanswered_html = "\n".join(
         f"""
         <tr>
@@ -811,8 +838,14 @@ def build_dashboard() -> str:
 
     <section>
       <h2>分块对照实验</h2>
-      <p class="note">三组使用完全相同的 97 份清洗语料和 8 个固定问题，只改变分块大小与重叠比例。MRR 越高，相关内容越靠前。</p>
+      <p class="note">三组使用完全相同的 97 份清洗语料和 8 个固定问题，只改变分块大小与重叠比例。这是初步筛选，正式参数以严格测试集的自动调优结果为准。</p>
       <div class="ragflow-grid">{experiment_cards_html}</div>
+    </section>
+
+    <section>
+      <h2>检索参数自动调优</h2>
+      <p class="note">脚本通过 RAGFlow API 对 A/B/C 知识库、向量权重和相似度阈值进行两轮搜索，并用独立验证集同时检查正确召回与无答案拒答。当前安全间隔较窄，阈值附近应拒答或复核。</p>
+      <div class="ragflow-grid">{tuning_html}</div>
     </section>
 
     <section>

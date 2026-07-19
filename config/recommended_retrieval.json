@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-07-19 15:39:09",
+  "dataset_key": "C",
+  "dataset_id": "fc465e94833f11f1ac0a959490948c10",
+  "chunk_count": 142,
+  "vector_similarity_weight": 0.75,
+  "similarity_threshold": 0.7,
+  "top_k": 10,
+  "score_separation": {
+    "minimum_relevant_positive_score": 0.7016976215228817,
+    "maximum_negative_top_score": 0.6912813915158182,
+    "margin": 0.010416230007063487
+  }
+}

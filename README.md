@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.8.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+当前版本：`v0.9.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -168,6 +168,20 @@ python ragflow\import_experiment_pipelines.py
 ```powershell
 python ragflow\evaluate_chunk_experiments.py
 ```
+
+使用 30 个可回答问题和 10 个应拒答问题自动搜索知识库、向量权重与相似度阈值：
+
+```powershell
+python ragflow\tune_retrieval_parameters.py --workers 4
+```
+
+已经完成 API 检索时，可以复用原始结果重新评分，并把最优配置写入项目：
+
+```powershell
+python ragflow\tune_retrieval_parameters.py --reuse-results --apply
+```
+
+推荐参数保存在 `config/recommended_retrieval.json`，完整 JSON/Markdown 报告生成在 `outputs` 目录。RAGFlow 的知识库更新接口不接受检索权重和阈值，因此应用在每次检索请求中传入这些参数，不修改知识库本身。
 
 三套知识库分别使用 500 tokens/10% 重叠、800 tokens/10% 重叠、1200 tokens/15% 重叠。它们绑定真实的 RAGFlow 数据流水线，因此文件完成解析后会在知识库“日志”页生成记录。实验结果和入口也会显示在：
 
