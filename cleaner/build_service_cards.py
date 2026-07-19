@@ -216,6 +216,7 @@ CARDS = [
         "department": "招生办公室",
         "answer": "暨南大学招生办公室下载中心仍列有“暨南大学丝路奖学金申请表”（2016-04-21），但原附件直链当前返回 403，无法作为可靠公开下载通道；请从招生办公室下载中心查看最新材料或联系招生办公室确认。",
         "source": "https://zsb.jnu.edu.cn/3562/list2.htm",
+        "discover_downloads": False,
         "keywords": "奖学金, 丝路奖学金, 暨南大学丝路奖学金申请表, 招生办公室, 下载中心",
     },
     {
@@ -492,6 +493,8 @@ def download_name(url: str, link_text: str, fallback: str) -> str:
 
 
 def discover_downloads(card: dict) -> list[dict[str, str]]:
+    if card.get("discover_downloads") is False:
+        return []
     source = card["source"]
     source_suffix = Path(urlparse(source).path).suffix.lower()
     if source_suffix in DOWNLOAD_SUFFIXES and is_official_url(source):
