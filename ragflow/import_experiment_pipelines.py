@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -120,6 +121,14 @@ class RagflowClient:
             f"/datasets/{dataset_id}/documents/parse",
             json={"document_ids": document_ids},
         )
+
+    def delete_documents(self, dataset_id: str, document_ids: list[str]) -> None:
+        if document_ids:
+            self.request(
+                "DELETE",
+                f"/datasets/{dataset_id}/documents",
+                json={"ids": document_ids, "delete_all": False},
+            )
 
     def ingestion_logs(self, dataset_id: str) -> dict[str, Any]:
         return self.request(
@@ -247,6 +256,9 @@ def main() -> None:
     parser.add_argument("--only", choices=["A", "B", "C"], action="append")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--no-wait", action="store_true")
+    parser.add_argument("--refresh-prefix", action="append", default=[])
+    parser.add_argument("--prune", action="store_true", help="Delete dataset documents that are no longer in the cleaned corpus.")
+    parser.add_argument("--refresh-changed", action="store_true", help="Replace documents whose cleaned file hash changed.")
     args = parser.parse_args()
 
     config = load_config()
@@ -291,10 +303,27 @@ def main() -> None:
         print(f"[{key}] dataset {dataset['action']}: {dataset['id']}")
 
         existing = {item["name"]: item for item in client.list_documents(dataset["id"])}
+        corpus_names = {path.name for path in corpus}
+        corpus_hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in corpus}
+        previous_hashes = state.get("experiments", {}).get(key, {}).get("corpus_hashes", {})
+        stale_ids = [item["id"] for name, item in existing.items() if name not in corpus_names]
+        if args.prune and stale_ids:
+            client.delete_documents(dataset["id"], stale_ids)
+            print(f"[{key}] pruned {len(stale_ids)} documents no longer present in the cleaned corpus")
+            existing = {item["name"]: item for item in client.list_documents(dataset["id"])}
+        refresh_ids = [
+            item["id"]
+            for name, item in existing.items()
+            if any(name.startswith(prefix) for prefix in args.refresh_prefix)
+            or (args.refresh_changed and name in previous_hashes and previous_hashes[name] != corpus_hashes.get(name))
+        ]
+        if refresh_ids:
+            client.delete_documents(dataset["id"], refresh_ids)
+            print(f"[{key}] deleted {len(refresh_ids)} changed documents for refresh")
+            existing = {item["name"]: item for item in client.list_documents(dataset["id"])}
         missing = [path for path in corpus if path.name not in existing]
         uploaded = client.upload_documents(dataset["id"], missing) if missing else []
         documents = client.list_documents(dataset["id"])
-        corpus_names = {path.name for path in corpus}
         target_ids = {item["id"] for item in documents if item.get("name") in corpus_names}
         print(f"[{key}] corpus={len(corpus)} uploaded={len(uploaded)} target={len(target_ids)}")
         if len(target_ids) != len(corpus):
@@ -322,6 +351,7 @@ def main() -> None:
             "chunk_tokens": chunk_tokens,
             "overlap_percent": overlap_percent,
             "document_count": len(target_ids),
+            "corpus_hashes": corpus_hashes,
             **result,
         }
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)

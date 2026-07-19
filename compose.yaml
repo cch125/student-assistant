@@ -1,0 +1,14 @@
+services:
+  student-assistant:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./data:/app/data:ro
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -103,7 +103,7 @@ def download_attachment(session: requests.Session, url: str, referer: str | None
     }
 
 
-def crawl(max_pages: int, max_depth: int) -> None:
+def crawl(max_pages: int, max_depth: int, max_pages_per_seed: int | None = None) -> None:
     config = load_config()
     allowed_domains = config["allowed_domains"]
     excluded_domains = config.get("excluded_domains", [])
@@ -120,6 +120,7 @@ def crawl(max_pages: int, max_depth: int) -> None:
     visited: set[str] = set()
     downloaded_attachments: set[str] = set()
     pages_saved = 0
+    pages_by_seed: Counter[str] = Counter()
 
     session = requests.Session()
     session.headers.update(
@@ -128,9 +129,19 @@ def crawl(max_pages: int, max_depth: int) -> None:
         }
     )
 
+    previous_records = []
+    if MANIFEST_PATH.exists():
+        for line in MANIFEST_PATH.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                previous_records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
     with MANIFEST_PATH.open("w", encoding="utf-8") as manifest:
         while queue and pages_saved < max_pages:
             item = queue.popleft()
+            if max_pages_per_seed and pages_by_seed[item.seed_name] >= max_pages_per_seed:
+                continue
             url = normalize_url(item.url)
             if url in visited or not allowed_url(url, allowed_domains, excluded_domains):
                 continue
@@ -184,6 +195,7 @@ def crawl(max_pages: int, max_depth: int) -> None:
                 + "\n"
             )
             pages_saved += 1
+            pages_by_seed[item.seed_name] += 1
 
             for attachment_url in attachments:
                 if attachment_url in downloaded_attachments:
@@ -220,15 +232,33 @@ def crawl(max_pages: int, max_depth: int) -> None:
 
             time.sleep(rate_limit)
 
+        retained = 0
+        for record in previous_records:
+            url = record.get("url")
+            local_path = record.get("local_path")
+            if not url or url in visited or not local_path or not (ROOT / local_path).exists():
+                continue
+            manifest.write(json.dumps(record, ensure_ascii=False) + "\n")
+            retained += 1
+
     print(f"Saved {pages_saved} pages. Manifest: {MANIFEST_PATH}")
+    print(f"Retained {retained} unchanged pages from the previous manifest.")
+    print("Pages by seed:")
+    for seed_name, count in pages_by_seed.most_common():
+        print(f"  {seed_name}: {count}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Crawl public Jinan University student-service pages.")
     parser.add_argument("--max-pages", type=int, default=40)
     parser.add_argument("--depth", type=int, default=1)
+    parser.add_argument("--max-pages-per-seed", type=int)
     args = parser.parse_args()
-    crawl(max_pages=args.max_pages, max_depth=args.depth)
+    crawl(
+        max_pages=args.max_pages,
+        max_depth=args.depth,
+        max_pages_per_seed=args.max_pages_per_seed,
+    )
 
 
 if __name__ == "__main__":

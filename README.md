@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.9.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+当前版本：`v0.10.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -169,10 +169,10 @@ python ragflow\import_experiment_pipelines.py
 python ragflow\evaluate_chunk_experiments.py
 ```
 
-使用 30 个可回答问题和 10 个应拒答问题自动搜索知识库、向量权重与相似度阈值：
+使用 35 个可回答问题和 15 个应拒答问题自动搜索知识库、向量权重与相似度阈值：
 
 ```powershell
-python ragflow\tune_retrieval_parameters.py --workers 4
+python ragflow\tune_retrieval_parameters.py --datasets C --workers 8 --notice-only --apply
 ```
 
 已经完成 API 检索时，可以复用原始结果重新评分，并把最优配置写入项目：
@@ -182,6 +182,14 @@ python ragflow\tune_retrieval_parameters.py --reuse-results --apply
 ```
 
 推荐参数保存在 `config/recommended_retrieval.json`，完整 JSON/Markdown 报告生成在 `outputs` 目录。RAGFlow 的知识库更新接口不接受检索权重和阈值，因此应用在每次检索请求中传入这些参数，不修改知识库本身。
+
+正式核心知识库使用 40 个独立意图扩展出的 160 条问法进行控制变量测试：
+
+```powershell
+python ragflow\tune_core_retrieval.py --workers 8
+```
+
+正式配置保存在 `config/recommended_core_retrieval.json`。助手会自动读取该文件，并在核心卡片没有答案时使用综合知识库做严格阈值的官方原文回退。
 
 三套知识库分别使用 500 tokens/10% 重叠、800 tokens/10% 重叠、1200 tokens/15% 重叠。它们绑定真实的 RAGFlow 数据流水线，因此文件完成解析后会在知识库“日志”页生成记录。实验结果和入口也会显示在：
 
@@ -220,6 +228,11 @@ python ragflow\ask_core_services.py "校巴时间"
 - 不提交 API Key、`.env`、RAGFlow token、反馈日志或爬取原始文件。
 - 只采集暨南大学公开网页，不登录教务系统、门户或网上服务大厅。
 - 回答必须基于知识库来源；没有明确材料时拒答。
+- 账号密码、个人隐私、医疗用药和录取保证使用独立硬拒答规则，不依赖相似度。
+
+## 部署与维护
+
+Docker、健康检查、平衡增量采集、每周计划任务、质量门禁、备份和密钥轮换步骤见 [OPERATIONS.md](OPERATIONS.md)。
 
 ## 版本发布规则
 

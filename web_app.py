@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import threading
+import time
+from collections import defaultdict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,8 +18,14 @@ from core_services import ask_core_service
 from visualize_pipeline import build_coverage_report, build_dashboard
 
 
-HOST = "127.0.0.1"
-PORT = 8090
+HOST = os.getenv("ASSISTANT_HOST", "127.0.0.1")
+PORT = int(os.getenv("ASSISTANT_PORT", "8090"))
+MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", "16384"))
+MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "300"))
+RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))
+RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+REQUEST_HISTORY: dict[str, deque[float]] = defaultdict(deque)
+REQUEST_LOCK = threading.Lock()
 
 HTML = r"""<!doctype html>
 <html lang="zh-CN">
@@ -565,11 +575,29 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
         self.wfile.write(body)
 
+    def rate_limited(self) -> bool:
+        now = time.monotonic()
+        client = self.client_address[0]
+        with REQUEST_LOCK:
+            history = REQUEST_HISTORY[client]
+            while history and now - history[0] > RATE_LIMIT_WINDOW:
+                history.popleft()
+            if len(history) >= RATE_LIMIT_REQUESTS:
+                return True
+            history.append(now)
+        return False
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/healthz":
+            self.send_json({"status": "ok"})
+            return
         if path == "/api/coverage":
             self.send_json(build_coverage_report())
             return
@@ -598,17 +626,28 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
 
+        if self.rate_limited():
+            self.send_json({"ok": False, "answer": "请求过于频繁，请稍后再试。"}, status=429)
+            return
+
         length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0 or length > MAX_BODY_BYTES:
+            self.send_json({"ok": False, "answer": "请求内容无效或过长。"}, status=413)
+            return
         raw_body = self.rfile.read(length)
         try:
             payload = json.loads(raw_body.decode("utf-8"))
-            question = str(payload.get("question", ""))
+            question = str(payload.get("question", "")).strip()
+            if not question or len(question) > MAX_QUESTION_LENGTH:
+                self.send_json({"ok": False, "answer": "问题不能为空，且不能超过300个字符。"}, status=400)
+                return
             result = ask_core_service(question)
         except Exception as exc:
+            print(f"ask failed: {type(exc).__name__}: {exc}")
             self.send_json(
                 {
                     "ok": False,
-                    "answer": f"查询失败：{exc}",
+                    "answer": "查询暂时失败，请稍后重试。",
                     "source_url": "",
                     "document_name": "",
                     "similarity": 0,

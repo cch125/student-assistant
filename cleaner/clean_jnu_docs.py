@@ -11,10 +11,26 @@ from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "data" / "raw" / "manifest.jsonl"
+RAW_DIR = ROOT / "data" / "raw"
 CATEGORIES_PATH = ROOT / "config" / "categories.json"
 CLEAN_DIR = ROOT / "data" / "cleaned"
 MARKDOWN_DIR = CLEAN_DIR / "ragflow_markdown"
 DOCUMENTS_PATH = CLEAN_DIR / "documents.jsonl"
+
+GENERIC_TITLE_PATTERNS = [
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"^(首页|MORE|更多|概况|部门简介|部门设置|管理职能|工作动态|头条新闻|通知公告|所有类别|报名入口|资源导航|法律声明|风景|QQ)$",
+        r"^(暨南大学)?(本科生院|研究生院|学生处|公费医疗办公室|网络与教育技术中心)$",
+        r"^(学校新闻|办学单位|校区简介|管委会简介|联系地址|联系方式)$",
+    )
+]
+NON_STUDENT_TITLE_TERMS = ("离退休", "教工", "教师岗位", "合同制岗位", "办公室人选", "工伤保险")
+ACTIONABLE_TERMS = (
+    "学生", "本科", "研究生", "新生", "毕业生", "学籍", "选课", "成绩", "学位", "证书", "申请", "办理",
+    "通知", "公示", "比赛", "竞赛", "奖学金", "医疗", "医保", "就业", "招聘会", "图书", "数据库", "校园网",
+    "校园卡", "校区", "食堂", "班车", "住宿", "心理", "咨询", "缴费", "注册", "免修", "免考", "场地", "开馆",
+)
 
 
 def compact_text(text: str) -> str:
@@ -88,13 +104,21 @@ def is_student_service_record(record: dict) -> bool:
         "网络校园卡",
         "校区生活",
     }
-    if record.get("category_hint") in important_hints:
+    title = " ".join(str(record.get("title") or "").split())
+    if any(pattern.search(title) for pattern in GENERIC_TITLE_PATTERNS):
+        return False
+    if any(term in title for term in NON_STUDENT_TITLE_TERMS):
+        return False
+    title_actionable = any(term in title for term in ACTIONABLE_TERMS)
+    body_sample = str(record.get("text") or "")[:1200]
+    body_actionable = any(term in body_sample for term in ACTIONABLE_TERMS)
+    if title_actionable:
         return True
-    if any(category != "其他" for category in record.get("categories", [])):
+    if record.get("category_hint") in important_hints and body_actionable:
         return True
-    if record.get("attachments") and record.get("category_hint") in important_hints:
+    if record.get("attachments") and body_actionable:
         return True
-    return False
+    return any(category != "其他" for category in record.get("categories", [])) and body_actionable
 
 
 def slugify(text: str, fallback: str) -> str:
@@ -112,6 +136,31 @@ def load_manifest() -> list[dict]:
                 records.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
+    known_local_paths = {row.get("local_path") for row in records if row.get("local_path")}
+    orphan_pattern = re.compile(r"^(20\d{2})_(\d{4})_(c\d+a\d+)_page\.htm_[0-9a-f]{12}\.html$")
+    for path in RAW_DIR.glob("*.html"):
+        relative = str(path.relative_to(ROOT))
+        if relative in known_local_paths:
+            continue
+        match = orphan_pattern.match(path.name)
+        if not match:
+            continue
+        year, month_day, article, = match.groups()
+        url = f"https://jwc.jnu.edu.cn/{year}/{month_day}/{article}/page.htm"
+        records.append(
+            {
+                "kind": "page",
+                "url": url,
+                "title": "",
+                "local_path": relative,
+                "seed_name": "本科生院-本地增量恢复",
+                "department": "本科生院",
+                "category_hint": "学生事务",
+                "depth": 1,
+                "attachments": [],
+                "recovered_from_local_html": True,
+            }
+        )
     return records
 
 
@@ -153,9 +202,13 @@ def main() -> None:
         old_file.unlink()
 
     cleaned = []
+    seen_urls: set[str] = set()
     for item in load_manifest():
         if item.get("kind") != "page" or not item.get("local_path"):
             continue
+        if item.get("url") in seen_urls:
+            continue
+        seen_urls.add(item.get("url", ""))
         html_path = ROOT / item["local_path"]
         if not html_path.exists():
             continue

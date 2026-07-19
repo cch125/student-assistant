@@ -25,6 +25,7 @@ class Candidate:
     dataset_key: str
     dataset_id: str
     vector_weight: float
+    rerank_id: str | None = None
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -54,7 +55,8 @@ def score_separation(results: list[dict[str, Any]]) -> dict[str, float]:
     negative_scores = []
     for item in results:
         if item["case_type"] == "negative":
-            negative_scores.append(item["chunks"][0]["similarity"] if item["chunks"] else 0.0)
+            if not item.get("guarded"):
+                negative_scores.append(item["chunks"][0]["similarity"] if item["chunks"] else 0.0)
             continue
         patterns = [pattern.lower() for pattern in item["relevant_patterns"]]
         relevant_scores = [
@@ -91,6 +93,7 @@ def retrieve_case(
             "top_k": 10,
             "similarity_threshold": 0.0,
             "vector_similarity_weight": candidate.vector_weight,
+            "rerank_id": candidate.rerank_id,
             "highlight": False,
         },
     )
@@ -100,6 +103,7 @@ def retrieve_case(
         "case_type": case_type,
         "query": case["query"],
         "relevant_patterns": case.get("relevant_patterns", []),
+        "guarded": bool(case.get("guarded", False)),
         "latency_seconds": round(time.monotonic() - started, 4),
         "chunks": [
             {
@@ -161,7 +165,7 @@ def score_results(
     rejected = 0
     for item in negatives:
         top = item["chunks"][0] if item["chunks"] else None
-        is_rejected = not top or top["similarity"] < threshold
+        is_rejected = bool(item.get("guarded")) or not top or top["similarity"] < threshold
         rejected += int(is_rejected)
         negative_details.append(
             {
@@ -205,7 +209,8 @@ def threshold_grid(values: list[float]) -> list[float]:
 
 
 def candidate_key(candidate: Candidate) -> str:
-    return f"{candidate.dataset_key}:w={candidate.vector_weight:.3f}"
+    mode = "rerank" if candidate.rerank_id else "base"
+    return f"{candidate.dataset_key}:{mode}:w={candidate.vector_weight:.3f}"
 
 
 def summarize_candidate(
@@ -220,6 +225,7 @@ def summarize_candidate(
         "dataset_key": candidate.dataset_key,
         "dataset_id": candidate.dataset_id,
         "vector_weight": candidate.vector_weight,
+        "rerank_id": candidate.rerank_id,
         "mean_latency_seconds": statistics.mean(item["latency_seconds"] for item in results),
         "best": best,
         "threshold_scores": [
@@ -243,6 +249,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
         f"- 数据集 ID：`{best['dataset_id']}`",
         f"- 数据集分块数：{best['chunk_count']}",
         f"- 向量相似度权重：{best['vector_weight']:.3f}",
+        f"- Rerank：{best['rerank_id'] or '关闭'}",
         f"- 最低相似度阈值：{best['similarity_threshold']:.3f}",
         f"- 验证集 Top 1：{best['metrics']['recall_at_1']:.1%}",
         f"- 验证集 Recall@3：{best['metrics']['recall_at_3']:.1%}",
@@ -254,13 +261,14 @@ def markdown_report(payload: dict[str, Any]) -> str:
         "",
         "## 候选排名",
         "",
-        "| 排名 | 数据集 | 分块 | 向量权重 | 阈值 | 训练分 | 验证分 | Top 1 | Recall@3 | MRR | 拒答率 |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| 排名 | 数据集 | 模式 | 分块 | 向量权重 | 阈值 | 训练分 | 验证分 | Top 1 | Recall@3 | MRR | 拒答率 |",
+        "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for index, item in enumerate(payload["leaderboard"], start=1):
         metrics = item["metrics"]
         lines.append(
-            f"| {index} | {item['dataset_key']} | {item['chunk_count']} | {item['vector_weight']:.3f} | "
+            f"| {index} | {item['dataset_key']} | {'Rerank' if item['rerank_id'] else '基础'} | "
+            f"{item['chunk_count']} | {item['vector_weight']:.3f} | "
             f"{item['threshold']:.3f} | {item['training_objective']:.3f} | {item['objective']:.3f} | "
             f"{metrics['recall_at_1']:.1%} | {metrics['recall_at_3']:.1%} | "
             f"{metrics['mrr']:.3f} | {metrics['negative_rejection_rate']:.1%} |"
@@ -288,9 +296,28 @@ def main() -> None:
     parser.add_argument("--datasets", nargs="*", choices=["A", "B", "C"], default=["A", "B", "C"])
     parser.add_argument("--apply", action="store_true", help="Activate the recommendation in the project config file.")
     parser.add_argument("--reuse-results", action="store_true", help="Re-score the last raw API results without calling RAGFlow again.")
+    parser.add_argument("--notice-only", action="store_true", help="Tune the grounded official-notice fallback rather than core service cards.")
+    parser.add_argument(
+        "--rerank-id",
+        default="BAAI/bge-reranker-v2-m3@default1@OpenAI-API-Compatible",
+        help="Rerank model used by the notice fallback comparison.",
+    )
+    parser.add_argument(
+        "--index-settle-seconds",
+        type=float,
+        default=15,
+        help="Wait for the RAGFlow search index to become visible before a fresh benchmark.",
+    )
     args = parser.parse_args()
 
     benchmark = load_json(BENCHMARK_PATH)
+    if args.notice_only:
+        benchmark = {
+            **benchmark,
+            "positive_cases": [
+                item for item in benchmark["positive_cases"] if item.get("target") == "notice"
+            ],
+        }
     experiment_config = load_json(EXPERIMENT_CONFIG_PATH)
     client = RagflowClient(args.base_url)
     datasets_by_name = {item["name"]: item for item in client.list_datasets()}
@@ -318,10 +345,16 @@ def main() -> None:
     evaluations: dict[str, dict[str, Any]] = {}
     print(f"Benchmark: {len(benchmark['positive_cases'])} positive + {len(benchmark['negative_cases'])} negative")
 
+    if not previous_payload and args.index_settle_seconds > 0:
+        print(f"Waiting {args.index_settle_seconds:g}s for the RAGFlow index to settle")
+        time.sleep(args.index_settle_seconds)
+
     if previous_payload:
         all_thresholds = threshold_grid([0.30 + index * 0.025 for index in range(21)])
         for old in previous_payload.get("evaluations", {}).values():
-            candidate = Candidate(old["dataset_key"], old["dataset_id"], old["vector_weight"])
+            candidate = Candidate(
+                old["dataset_key"], old["dataset_id"], old["vector_weight"], old.get("rerank_id")
+            )
             evaluations[candidate_key(candidate)] = summarize_candidate(
                 candidate, old["raw_results"], all_thresholds, training_ids
             )
@@ -334,6 +367,14 @@ def main() -> None:
                 evaluations[candidate_key(candidate)] = summarize_candidate(
                     candidate, results, coarse_thresholds, training_ids
                 )
+            if args.notice_only and args.rerank_id:
+                for weight in (0.8, 0.9, 1.0):
+                    candidate = Candidate(key, dataset_id, weight, args.rerank_id)
+                    print(f"[coarse] {candidate_key(candidate)}")
+                    results = run_candidate(args.base_url, candidate, benchmark, args.workers)
+                    evaluations[candidate_key(candidate)] = summarize_candidate(
+                        candidate, results, coarse_thresholds, training_ids
+                    )
 
     coarse_best = max(
         evaluations.values(),
@@ -347,7 +388,7 @@ def main() -> None:
     if not previous_payload:
         for key, dataset_id in dataset_ids.items():
             for weight in refine_weights:
-                candidate = Candidate(key, dataset_id, weight)
+                candidate = Candidate(key, dataset_id, weight, coarse_best.get("rerank_id"))
                 key_name = candidate_key(candidate)
                 if key_name in evaluations:
                     continue
@@ -369,6 +410,7 @@ def main() -> None:
                 "dataset_id": evaluation["dataset_id"],
                 "chunk_count": dataset_chunk_counts[evaluation["dataset_key"]],
                 "vector_weight": evaluation["vector_weight"],
+                "rerank_id": evaluation.get("rerank_id"),
                 "threshold": best["threshold"],
                 "training_objective": best["objective"],
                 "objective": validation_metrics["objective"],
@@ -389,13 +431,18 @@ def main() -> None:
     )
     winner = leaderboard[0]
     winner_evaluation = evaluations[
-        candidate_key(Candidate(winner["dataset_key"], winner["dataset_id"], winner["vector_weight"]))
+        candidate_key(
+            Candidate(
+                winner["dataset_key"], winner["dataset_id"], winner["vector_weight"], winner.get("rerank_id")
+            )
+        )
     ]
     recommendation = {
         "dataset_key": winner["dataset_key"],
         "dataset_id": winner["dataset_id"],
         "chunk_count": winner["chunk_count"],
         "vector_weight": winner["vector_weight"],
+        "rerank_id": winner.get("rerank_id"),
         "similarity_threshold": winner["threshold"],
         "top_k": 10,
         "metrics": winner["metrics"],
@@ -423,6 +470,7 @@ def main() -> None:
                 "dataset_id": recommendation["dataset_id"],
                 "chunk_count": recommendation["chunk_count"],
                 "vector_similarity_weight": recommendation["vector_weight"],
+                "rerank_id": recommendation["rerank_id"],
                 "similarity_threshold": recommendation["similarity_threshold"],
                 "top_k": recommendation["top_k"],
                 "score_separation": recommendation["score_separation"],

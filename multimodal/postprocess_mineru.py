@@ -15,6 +15,7 @@ MINERU_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "manifest.jsonl
 OUTPUT_DIR = PROJECT_ROOT / "data" / "cleaned" / "multimodal"
 RAGFLOW_DIR = PROJECT_ROOT / "data" / "cleaned" / "multimodal_ragflow"
 OUTPUT_MANIFEST = OUTPUT_DIR / "manifest.jsonl"
+PROCESSOR_VERSION = "1.1"
 
 DROP_TYPES = {"page_number"}
 DECORATIVE_PATTERNS = [
@@ -160,6 +161,19 @@ def clean_document(row: dict) -> tuple[dict, str]:
             rows = html_table_to_rows(html)
             captions = [normalize_text(value) for value in item.get("table_caption", []) if normalize_text(value)]
             footnotes = [normalize_text(value) for value in item.get("table_footnote", []) if normalize_text(value)]
+            context = page_text_context(items, index)
+            if not rows:
+                removed.append(
+                    {
+                        **trace,
+                        "type": kind,
+                        "reason": "empty-table-no-cells",
+                        "caption": captions,
+                        "context": context,
+                        "image_path": item.get("img_path", ""),
+                    }
+                )
+                continue
             units.append(
                 {
                     **trace,
@@ -169,7 +183,7 @@ def clean_document(row: dict) -> tuple[dict, str]:
                     "html": html,
                     "rows": rows,
                     "image_path": item.get("img_path", ""),
-                    "context": page_text_context(items, index),
+                    "context": context,
                 }
             )
             continue
@@ -177,14 +191,20 @@ def clean_document(row: dict) -> tuple[dict, str]:
         if kind == "image":
             captions = [normalize_text(value) for value in item.get("image_caption", []) if normalize_text(value)]
             footnotes = [normalize_text(value) for value in item.get("image_footnote", []) if normalize_text(value)]
+            context = page_text_context(items, index)
+            caption_source = "explicit"
+            if not captions and context:
+                captions = [context[-1][:160]]
+                caption_source = "derived-from-page-context"
             units.append(
                 {
                     **trace,
                     "type": "image",
                     "caption": captions,
+                    "caption_source": caption_source,
                     "footnote": footnotes,
                     "image_path": item.get("img_path", ""),
-                    "context": page_text_context(items, index),
+                    "context": context,
                 }
             )
             continue
@@ -196,7 +216,7 @@ def clean_document(row: dict) -> tuple[dict, str]:
         next((unit["text"] for unit in units if unit["type"] == "text"), Path(row["source"]).stem),
     )
     document = {
-        "schema_version": "1.0",
+        "schema_version": PROCESSOR_VERSION,
         "title": title,
         "source_file": row["source"],
         "source_sha256": source_sha,
@@ -271,7 +291,12 @@ def main() -> None:
     success = unchanged = failed = 0
     for row in latest_successes():
         previous = latest_output.get(row["source"])
-        if previous and previous.get("source_sha256") == row.get("sha256") and previous.get("status") == "success":
+        if (
+            previous
+            and previous.get("source_sha256") == row.get("sha256")
+            and previous.get("processor_version") == PROCESSOR_VERSION
+            and previous.get("status") == "success"
+        ):
             unchanged += 1
             continue
         try:
@@ -284,6 +309,7 @@ def main() -> None:
             result = {
                 "source_file": row["source"],
                 "source_sha256": row["sha256"],
+                "processor_version": PROCESSOR_VERSION,
                 "status": "success",
                 "processed_at": now_iso(),
                 "json_path": str(json_path.relative_to(PROJECT_ROOT)).replace("\\", "/"),

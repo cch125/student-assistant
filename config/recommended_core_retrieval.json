@@ -1,0 +1,317 @@
+{
+  "generated_at": "2026-07-19 16:01:00",
+  "dataset_name": "暨南大学学生助手-核心服务卡片",
+  "dataset_id": "74fcf47a82a911f1b5b53f83b25d89d3",
+  "document_count": 34,
+  "chunk_count": 47,
+  "vector_similarity_weight": 0.9,
+  "full_text_weight": 0.1,
+  "similarity_threshold": 0.2,
+  "top_k": 20,
+  "page_size": 3,
+  "keyword": false,
+  "cross_languages": [],
+  "metadata_condition": null,
+  "use_kg": false,
+  "rerank_id": "BAAI/bge-reranker-v2-m3@default1@OpenAI-API-Compatible",
+  "validation_metrics": {
+    "threshold": 0.2,
+    "objective": 1.0,
+    "recall_at_1": 1.0,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr": 1.0,
+    "negative_rejection_rate": 1.0,
+    "positive_details": [
+      {
+        "case_id": "calendar:v0",
+        "query": "暨南大学校历在哪里查看？",
+        "rank": 1,
+        "top_document": "暨南大学校历查询.md",
+        "top_score": 0.9250635238296269
+      },
+      {
+        "case_id": "calendar:v1",
+        "query": "请问暨南大学校历在哪里查看？",
+        "rank": 1,
+        "top_document": "暨南大学校历查询.md",
+        "top_score": 0.9243392737514255
+      },
+      {
+        "case_id": "calendar:v2",
+        "query": "我是暨大学生，想了解暨南大学校历在哪里查看。",
+        "rank": 1,
+        "top_document": "暨南大学校历查询.md",
+        "top_score": 0.9153377185831816
+      },
+      {
+        "case_id": "calendar:v3",
+        "query": "暨南大学校历在哪里查看，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "暨南大学校历查询.md",
+        "top_score": 0.8973977516926743
+      },
+      {
+        "case_id": "degree_reissue:v0",
+        "query": "学位证书丢失后怎样申请补办？",
+        "rank": 1,
+        "top_document": "学位证书遗失补办.md",
+        "top_score": 0.8716223341833406
+      },
+      {
+        "case_id": "degree_reissue:v1",
+        "query": "请问学位证书丢失后怎样申请补办？",
+        "rank": 1,
+        "top_document": "学位证书遗失补办.md",
+        "top_score": 0.8789675635706239
+      },
+      {
+        "case_id": "degree_reissue:v2",
+        "query": "我是暨大学生，想了解学位证书丢失后怎样申请补办。",
+        "rank": 1,
+        "top_document": "学位证书遗失补办.md",
+        "top_score": 0.9076969242226532
+      },
+      {
+        "case_id": "degree_reissue:v3",
+        "query": "学位证书丢失后怎样申请补办，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "学位证书遗失补办.md",
+        "top_score": 0.7882006188208008
+      },
+      {
+        "case_id": "innovation_credit:v0",
+        "query": "创新学分申请表从哪里获取？",
+        "rank": 1,
+        "top_document": "创新学分申请表.md",
+        "top_score": 0.8757472320729258
+      },
+      {
+        "case_id": "innovation_credit:v1",
+        "query": "请问创新学分申请表从哪里获取？",
+        "rank": 1,
+        "top_document": "创新学分申请表.md",
+        "top_score": 0.8702016903320734
+      },
+      {
+        "case_id": "innovation_credit:v2",
+        "query": "我是暨大学生，想了解创新学分申请表从哪里获取。",
+        "rank": 1,
+        "top_document": "创新学分申请表.md",
+        "top_score": 0.906542531451976
+      },
+      {
+        "case_id": "innovation_credit:v3",
+        "query": "创新学分申请表从哪里获取，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "创新学分申请表.md",
+        "top_score": 0.79742892302735
+      },
+      {
+        "case_id": "leave_of_absence:v0",
+        "query": "本科生因病休学要经过哪些部门办理？",
+        "rank": 1,
+        "top_document": "本科生休学流程.md",
+        "top_score": 0.8943607814583076
+      },
+      {
+        "case_id": "leave_of_absence:v1",
+        "query": "请问本科生因病休学要经过哪些部门办理？",
+        "rank": 1,
+        "top_document": "本科生休学流程.md",
+        "top_score": 0.8991276033195746
+      },
+      {
+        "case_id": "leave_of_absence:v2",
+        "query": "我是暨大学生，想了解本科生因病休学要经过哪些部门办理。",
+        "rank": 1,
+        "top_document": "本科生休学流程.md",
+        "top_score": 0.9163226825906968
+      },
+      {
+        "case_id": "leave_of_absence:v3",
+        "query": "本科生因病休学要经过哪些部门办理，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "本科生休学流程.md",
+        "top_score": 0.822801383447628
+      },
+      {
+        "case_id": "library_renewal:v0",
+        "query": "借阅的图书怎样续借或预约？",
+        "rank": 1,
+        "top_document": "图书续借和预约.md",
+        "top_score": 0.9413127774407507
+      },
+      {
+        "case_id": "library_renewal:v1",
+        "query": "请问借阅的图书怎样续借或预约？",
+        "rank": 1,
+        "top_document": "图书续借和预约.md",
+        "top_score": 0.9387052947690131
+      },
+      {
+        "case_id": "library_renewal:v2",
+        "query": "我是暨大学生，想了解借阅的图书怎样续借或预约。",
+        "rank": 1,
+        "top_document": "图书续借和预约.md",
+        "top_score": 0.9133867186287421
+      },
+      {
+        "case_id": "library_renewal:v3",
+        "query": "借阅的图书怎样续借或预约，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "图书续借和预约.md",
+        "top_score": 0.8906271890253358
+      },
+      {
+        "case_id": "postgraduate_recommendation:v0",
+        "query": "本科生推免申请从哪里报名？",
+        "rank": 1,
+        "top_document": "推免申请报名.md",
+        "top_score": 0.8944502577980975
+      },
+      {
+        "case_id": "postgraduate_recommendation:v1",
+        "query": "请问本科生推免申请从哪里报名？",
+        "rank": 1,
+        "top_document": "推免申请报名.md",
+        "top_score": 0.8835729882916431
+      },
+      {
+        "case_id": "postgraduate_recommendation:v2",
+        "query": "我是暨大学生，想了解本科生推免申请从哪里报名。",
+        "rank": 1,
+        "top_document": "推免申请报名.md",
+        "top_score": 0.9107506870752327
+      },
+      {
+        "case_id": "postgraduate_recommendation:v3",
+        "query": "本科生推免申请从哪里报名，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "推免申请报名.md",
+        "top_score": 0.7869728938884437
+      },
+      {
+        "case_id": "practice_agreement:v0",
+        "query": "实践教育基地协议模板在哪里下载？",
+        "rank": 1,
+        "top_document": "实践教育基地协议模板.md",
+        "top_score": 0.9366613478239606
+      },
+      {
+        "case_id": "practice_agreement:v1",
+        "query": "请问实践教育基地协议模板在哪里下载？",
+        "rank": 1,
+        "top_document": "实践教育基地协议模板.md",
+        "top_score": 0.9356555730875562
+      },
+      {
+        "case_id": "practice_agreement:v2",
+        "query": "我是暨大学生，想了解实践教育基地协议模板在哪里下载。",
+        "rank": 1,
+        "top_document": "实践教育基地协议模板.md",
+        "top_score": 0.9204339178296619
+      },
+      {
+        "case_id": "practice_agreement:v3",
+        "query": "实践教育基地协议模板在哪里下载，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "实践教育基地协议模板.md",
+        "top_score": 0.9062458739584275
+      },
+      {
+        "case_id": "withdrawal_form:v0",
+        "query": "主动退学申请表需要填写哪些内容？",
+        "rank": 1,
+        "top_document": "本科学生主动退学申请表.md",
+        "top_score": 0.6556583090522414
+      },
+      {
+        "case_id": "withdrawal_form:v1",
+        "query": "请问主动退学申请表需要填写哪些内容？",
+        "rank": 1,
+        "top_document": "本科学生主动退学申请表.md",
+        "top_score": 0.685769055674327
+      },
+      {
+        "case_id": "withdrawal_form:v2",
+        "query": "我是暨大学生，想了解主动退学申请表需要填写哪些内容。",
+        "rank": 1,
+        "top_document": "本科学生主动退学申请表.md",
+        "top_score": 0.8851478317343316
+      },
+      {
+        "case_id": "withdrawal_form:v3",
+        "query": "主动退学申请表需要填写哪些内容，麻烦提供学校官方办理方式。",
+        "rank": 1,
+        "top_document": "本科学生主动退学申请表.md",
+        "top_score": 0.7522084772561818
+      }
+    ],
+    "negative_details": [
+      {
+        "case_id": "lost_found:v0",
+        "query": "我昨天在食堂丢了黑色雨伞，在哪里领取？",
+        "rejected": true,
+        "top_document": "番禺校区食堂营业时间.md",
+        "top_score": 0.008248021512460825
+      },
+      {
+        "case_id": "lost_found:v1",
+        "query": "请问我昨天在食堂丢了黑色雨伞，在哪里领取？",
+        "rejected": true,
+        "top_document": "番禺校区食堂营业时间.md",
+        "top_score": 0.00814621439267036
+      },
+      {
+        "case_id": "lost_found:v2",
+        "query": "我是暨大学生，想了解我昨天在食堂丢了黑色雨伞，在哪里领取。",
+        "rejected": true,
+        "top_document": "番禺校区食堂营业时间.md",
+        "top_score": 0.031258119841828545
+      },
+      {
+        "case_id": "lost_found:v3",
+        "query": "我昨天在食堂丢了黑色雨伞，在哪里领取，麻烦提供学校官方办理方式。",
+        "rejected": true,
+        "top_document": "番禺校区食堂营业时间.md",
+        "top_score": 0.01491426996481644
+      },
+      {
+        "case_id": "mars_campus:v0",
+        "query": "暨南大学火星校区的飞船班次是什么？",
+        "rejected": true,
+        "top_document": "校本部番禺校区教学班车时间.md",
+        "top_score": 0.03383365794822997
+      },
+      {
+        "case_id": "mars_campus:v1",
+        "query": "请问暨南大学火星校区的飞船班次是什么？",
+        "rejected": true,
+        "top_document": "校本部番禺校区教学班车时间.md",
+        "top_score": 0.04144271025240845
+      },
+      {
+        "case_id": "mars_campus:v2",
+        "query": "我是暨大学生，想了解暨南大学火星校区的飞船班次是什么。",
+        "rejected": true,
+        "top_document": "校本部番禺校区教学班车时间.md",
+        "top_score": 0.1414271975175906
+      },
+      {
+        "case_id": "mars_campus:v3",
+        "query": "暨南大学火星校区的飞船班次是什么，麻烦提供学校官方办理方式。",
+        "rejected": true,
+        "top_document": "校本部番禺校区教学班车时间.md",
+        "top_score": 0.028828690823055912
+      }
+    ]
+  },
+  "score_separation": {
+    "minimum_relevant_positive_score": 0.40944351384809097,
+    "maximum_negative_top_score": 0.1414271975175906,
+    "margin": 0.2680163163305004
+  },
+  "selection_reason": "Rerank 消除了基础召回残留的无答案误召回，并显著扩大正负分数间隔。",
+  "rerank_objective_gain": 0.004687499999999956
+}

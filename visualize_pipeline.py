@@ -22,6 +22,9 @@ COVERAGE_JSON = PROJECT_ROOT / "outputs" / "coverage_report.json"
 EXPERIMENT_RESULTS = PROJECT_ROOT / "outputs" / "chunk_experiment_results.json"
 RETRIEVAL_BENCHMARK = PROJECT_ROOT / "config" / "retrieval_benchmark.json"
 RECOMMENDED_RETRIEVAL = PROJECT_ROOT / "config" / "recommended_retrieval.json"
+RECOMMENDED_CORE_RETRIEVAL = PROJECT_ROOT / "config" / "recommended_core_retrieval.json"
+CORE_RETRIEVAL_BENCHMARK = PROJECT_ROOT / "config" / "core_retrieval_benchmark.json"
+QUALITY_GATE = PROJECT_ROOT / "outputs" / "quality_gate.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
 CATEGORIES_CONFIG = PROJECT_ROOT / "config" / "categories.json"
 SEEDS_CONFIG = PROJECT_ROOT / "config" / "seeds.json"
@@ -222,14 +225,19 @@ def build_coverage_report(
     priorities.sort(key=lambda row: (priority_order[row["priority"]], row["type"], row["name"]))
     covered_categories = sum(1 for row in category_rows if row["card_count"] > 0)
     covered_departments = sum(1 for row in department_rows if row["card_count"] > 0)
+    source_covered_categories = sum(1 for row in category_rows if row["source_count"] > 0 or row["card_count"] > 0)
+    source_covered_departments = sum(1 for row in department_rows if row["source_count"] > 0 or row["card_count"] > 0)
     return {
         "version": VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "dev",
         "summary": {
             "target_categories": len(category_rows),
             "covered_categories": covered_categories,
             "category_coverage_percent": round(covered_categories * 100 / len(category_rows), 1) if category_rows else 0,
+            "source_covered_categories": source_covered_categories,
+            "source_category_coverage_percent": round(source_covered_categories * 100 / len(category_rows), 1) if category_rows else 0,
             "target_departments": len(department_rows),
             "covered_departments": covered_departments,
+            "source_covered_departments": source_covered_departments,
             "feedback_questions": sum(feedback_counts.values()),
             "priority_gaps": sum(1 for row in priorities if row["priority"] in {"高", "中"}),
         },
@@ -316,6 +324,9 @@ def build_dashboard() -> str:
     experiment_results = read_json(EXPERIMENT_RESULTS, {})
     retrieval_benchmark = read_json(RETRIEVAL_BENCHMARK, {})
     recommended_retrieval = read_json(RECOMMENDED_RETRIEVAL, {})
+    recommended_core = read_json(RECOMMENDED_CORE_RETRIEVAL, {})
+    core_benchmark = read_json(CORE_RETRIEVAL_BENCHMARK, {})
+    quality_gate = read_json(QUALITY_GATE, {})
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
     mineru_events = read_jsonl(MINERU_MANIFEST)
@@ -563,6 +574,49 @@ def build_dashboard() -> str:
         if recommended_retrieval
         else "<p class=\"note\">尚未运行检索参数自动调优。</p>"
     )
+    core_metrics = recommended_core.get("validation_metrics", {})
+    core_tuning_html = (
+        f"""
+        <article class="ragflow-card">
+          <h3>正式核心知识库</h3>
+          <div class="metric-grid">
+            <b>{esc(recommended_core.get('vector_similarity_weight'))}<small>Vector</small></b>
+            <b>{esc(recommended_core.get('full_text_weight'))}<small>Full-text</small></b>
+            <b>{esc(recommended_core.get('similarity_threshold'))}<small>阈值</small></b>
+          </div>
+          <div class="parse-summary">
+            <span class="done">{esc(len(core_benchmark.get('positive_cases', [])) + len(core_benchmark.get('negative_cases', [])))} 条问法</span>
+            <span class="done">Top1 {esc(round(float(core_metrics.get('recall_at_1', 0)) * 100, 1))}%</span>
+            <span class="done">拒答 {esc(round(float(core_metrics.get('negative_rejection_rate', 0)) * 100, 1))}%</span>
+            <span>Rerank 已启用</span>
+          </div>
+          <p class="note">{esc(recommended_core.get('selection_reason', ''))}</p>
+          <div class="link-row"><a href="http://localhost:8080/dataset/files/{esc(recommended_core.get('dataset_id'))}" target="_blank">打开正式知识库</a></div>
+        </article>
+        """
+        if recommended_core
+        else "<p class=\"note\">正式核心知识库尚未调优。</p>"
+    )
+    quality_summary = quality_gate.get("summary", {})
+    quality_html = (
+        f"""
+        <article class="ragflow-card">
+          <h3>数据质量门禁</h3>
+          <div class="metric-grid">
+            <b>{esc(quality_summary.get('checked_urls', 0))}<small>已查链接</small></b>
+            <b>{esc(quality_summary.get('broken_urls', 0))}<small>失效链接</small></b>
+            <b>{esc(quality_summary.get('stale_documents', 0))}<small>待复核时效</small></b>
+          </div>
+          <div class="parse-summary">
+            <span>无图注 {esc(len(quality_gate.get('multimodal', {}).get('images_missing_caption', [])))}</span>
+            <span>空表格 {esc(len(quality_gate.get('multimodal', {}).get('empty_tables', [])))}</span>
+            <span class="done">链接检查完成</span>
+          </div>
+        </article>
+        """
+        if quality_gate
+        else "<p class=\"note\">尚未运行数据质量门禁。</p>"
+    )
     unanswered_html = "\n".join(
         f"""
         <tr>
@@ -580,10 +634,10 @@ def build_dashboard() -> str:
     coverage_metrics_html = "\n".join(
         f"<div class=\"coverage-metric\"><b>{esc(value)}</b><span>{esc(label)}</span></div>"
         for value, label in [
+            (f"{coverage_summary['source_covered_categories']}/{coverage_summary['target_categories']}", "类别已有官方资料"),
             (f"{coverage_summary['covered_categories']}/{coverage_summary['target_categories']}", "类别已有核心卡片"),
-            (f"{coverage_summary['category_coverage_percent']}%", "核心类别覆盖率"),
+            (f"{coverage_summary['source_covered_departments']}/{coverage_summary['target_departments']}", "部门已有官方资料"),
             (f"{coverage_summary['covered_departments']}/{coverage_summary['target_departments']}", "部门已有核心卡片"),
-            (coverage_summary["priority_gaps"], "高/中优先级缺口"),
         ]
     )
     coverage_category_rows = "\n".join(
@@ -846,6 +900,12 @@ def build_dashboard() -> str:
       <h2>检索参数自动调优</h2>
       <p class="note">脚本通过 RAGFlow API 对 A/B/C 知识库、向量权重和相似度阈值进行两轮搜索，并用独立验证集同时检查正确召回与无答案拒答。当前安全间隔较窄，阈值附近应拒答或复核。</p>
       <div class="ragflow-grid">{tuning_html}</div>
+    </section>
+
+    <section>
+      <h2>正式助手验收</h2>
+      <p class="note">正式核心知识库按独立意图划分训练与验证集。Rerank、跨语言、知识图谱和元数据过滤遵循控制变量原则，仅在指标证明有收益时启用。</p>
+      <div class="ragflow-grid">{core_tuning_html}{quality_html}</div>
     </section>
 
     <section>
