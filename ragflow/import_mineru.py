@@ -12,6 +12,7 @@ from ragflow_auth import get_api_key
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAGFLOW_SDK = PROJECT_ROOT.parent / "ragflow" / "sdk" / "python"
 MINERU_DIR = PROJECT_ROOT / "data" / "cleaned" / "mineru_ragflow"
+FILES_DIR = PROJECT_ROOT / "data" / "files"
 PARSE_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "manifest.jsonl"
 IMPORT_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "ragflow_import.jsonl"
 BASE_URL = os.getenv("RAGFLOW_BASE_URL", "http://localhost:8080")
@@ -102,13 +103,38 @@ def main() -> None:
     current_documents = list_all_documents(dataset)
     current_names = {doc.name for doc in current_documents}
     replacements = successful_replacements()
-    replaceable_sources = {
+    preserved_sources = {
         source_name for mineru_name, source_name in replacements.items() if mineru_name in current_names
     }
-    originals = [doc for doc in current_documents if doc.name in replaceable_sources]
-    if originals:
-        dataset.delete_documents(ids=[doc.id for doc in originals])
-        print(f"Removed {len(originals)} original attachment(s) replaced by MinerU output.")
+    attachment_paths = [
+        path
+        for path in sorted(FILES_DIR.glob("*"))
+        if path.name in preserved_sources and path.name not in current_names
+    ]
+    if attachment_paths:
+        attachment_docs = [{"display_name": path.name, "blob": path.open("rb")} for path in attachment_paths]
+        try:
+            uploaded_attachments = dataset.upload_documents(attachment_docs)
+        finally:
+            for doc in attachment_docs:
+                doc["blob"].close()
+        finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        for document in uploaded_attachments:
+            append_result(
+                {
+                    "document_id": document.id,
+                    "document_name": document.name,
+                    "status": "ATTACHMENT_ONLY",
+                    "chunks": 0,
+                    "tokens": 0,
+                    "dataset_id": dataset.id,
+                    "finished_at": finished_at,
+                }
+            )
+        print(
+            f"Preserved {len(uploaded_attachments)} original attachment(s) without parsing; "
+            "MinerU Markdown remains the searchable copy."
+        )
 
 
 if __name__ == "__main__":

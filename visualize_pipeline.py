@@ -308,6 +308,11 @@ def build_dashboard() -> str:
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
     mineru_events = read_jsonl(MINERU_MANIFEST)
     mineru_import_events = read_jsonl(MINERU_IMPORT_MANIFEST)
+    mineru_attachment_names = {
+        row.get("document_name")
+        for row in mineru_import_events
+        if row.get("status") == "ATTACHMENT_ONLY" and row.get("document_name")
+    }
     mineru_latest = {row.get("source"): row for row in mineru_events if row.get("source")}
     mineru_rows = sorted(mineru_latest.values(), key=lambda row: row.get("finished_at", ""), reverse=True)
     mineru_success = sum(1 for row in mineru_rows if row.get("status") == "success")
@@ -453,7 +458,8 @@ def build_dashboard() -> str:
         documents = kb.get("documents", [])
         completed = sum(1 for doc in documents if task_status(doc.get("run")) == "完成")
         failed = sum(1 for doc in documents if task_status(doc.get("run")) == "失败")
-        processing = max(len(documents) - completed - failed, 0)
+        attachment_only = sum(1 for doc in documents if doc.get("name") in mineru_attachment_names)
+        processing = max(len(documents) - completed - failed - attachment_only, 0)
         files_url = f"http://localhost:8080/dataset/files/{kb['id']}"
         logs_url = f"http://localhost:8080/dataset/logs/{kb['id']}"
         ragflow_cards.append(
@@ -470,6 +476,7 @@ def build_dashboard() -> str:
                 <span class="done">成功 {completed}</span>
                 <span>处理中 {processing}</span>
                 <span class="failed">失败 {failed}</span>
+                <span>附件留存 {attachment_only}</span>
               </div>
               <div class="link-row">
                 <a href="{files_url}" target="_blank">打开 RAGFlow 文件列表</a>
@@ -480,6 +487,8 @@ def build_dashboard() -> str:
         )
         for doc in kb.get("documents", [])[:80]:
             run_status = task_status(doc.get("run"))
+            if doc.get("name") in mineru_attachment_names:
+                run_status = "附件留存（不解析）"
             ragflow_doc_rows.append(
                 f"""
                 <tr>
