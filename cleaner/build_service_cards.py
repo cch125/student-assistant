@@ -260,6 +260,60 @@ CARDS = [
         "source": "https://fc.jnu.edu.cn/2026/0330/c33807a852624/page.htm",
         "keywords": "食堂, 饭堂, 餐厅, 营业时间, 开门时间, 几点开门, 食堂几点, 饭堂几点, 早餐, 午餐, 晚餐, 宵夜, 番禺校区, 裕华堂, 弘礼餐厅, 湖景餐厅",
     },
+    {
+        "filename": "本科生休学流程.md",
+        "title": "本科生办理休学流程",
+        "category": "学籍",
+        "department": "本科生院",
+        "answer": "本科生办理休学时，学生填写休学申请表；因病休学须经校门诊核签。申请表交学院教科办，学院审批并签署意见后交教务处学籍科；教务处审核批准后约 5 个工作日发出休学通知，学生凭通知回学院办理离校手续。",
+        "source": "https://jwc.jnu.edu.cn/2019/0418/c11805a310056/page.htm",
+        "keywords": "休学, 休学流程, 休学申请, 因病休学, 学籍科, 离校手续, 本科生",
+    },
+    {
+        "filename": "本科生复学流程.md",
+        "title": "本科生办理复学流程",
+        "category": "学籍",
+        "department": "本科生院",
+        "answer": "本科生休学期满，应于学期开学前到学院教科办填写复学申请表；因病休学者须经校门诊体检并凭证明办理。学院审批后交教务处学籍科；教务处审查符合复学条件后开出复学通知。学生领取复学通知后，到财务处交学费，再到学院注册并办理选课事宜。",
+        "source": "https://jwc.jnu.edu.cn/2019/0418/c11805a310075/page.htm",
+        "keywords": "复学, 复学流程, 复学申请, 休学期满, 学籍科, 注册, 选课, 本科生",
+    },
+    {
+        "filename": "本科生退学流程.md",
+        "title": "本科生办理退学流程",
+        "category": "学籍",
+        "department": "本科生院",
+        "answer": "本科生申请退学时，将书面申请交学院教务秘书处，并在教务秘书指导下填写《暨南大学本科学生退学申请表》。学院审批后交教务处学籍科；经教务处审核并报校长办公会批准后，学校发文并通知学院。学院通知学生按离校清单办理离校手续，办完后到教务处学籍科办理相应退学证明。",
+        "source": "https://jwc.jnu.edu.cn/2019/0418/c11805a310100/page.htm",
+        "keywords": "退学, 退学流程, 退学申请, 退学申请表, 离校手续, 退学证明, 学籍科, 本科生",
+    },
+    {
+        "filename": "研究生服务中心业务办理.md",
+        "title": "研究生服务中心业务办理",
+        "category": "研究生事务",
+        "department": "研究生院",
+        "answer": "暨南大学研究生教育服务中心面向研究生和校友提供一站式服务，主要受理培养、学位等咨询和材料接收，可办理研究生在读证明、出国成绩单、学位证明、学历学位认证、补办学位证明书、学历证明书、研究生证和火车票优惠卡等事项。",
+        "source": "https://gs.jnu.edu.cn/yjsfwzx/list.htm",
+        "keywords": "研究生服务中心, 研究生在读证明, 出国成绩单, 学位证明, 学历学位认证, 研究生证, 火车票优惠卡, 研究生事务",
+    },
+    {
+        "filename": "毕业生就业手续入口.md",
+        "title": "毕业生就业手续入口",
+        "category": "就业档案",
+        "department": "就业指导中心",
+        "answer": "暨南大学学生就业指导中心网站提供毕业生相关入口，包括就业信息、校内外宣讲会、双选会、在线招聘、公务员招考、实习岗位、就业指导、三方协议、报到证、就业信息填写、调整改派、常用下载和档案查询等栏目。",
+        "source": "https://career.jnu.edu.cn/",
+        "keywords": "就业, 就业手续, 三方协议, 报到证, 档案查询, 就业信息填写, 调整改派, 招聘, 实习岗位, 毕业生",
+    },
+    {
+        "filename": "公费医疗服务指南.md",
+        "title": "公费医疗服务指南",
+        "category": "医保医疗",
+        "department": "公费医疗办公室",
+        "answer": "暨南大学公费医疗办公室网站提供校内公费医疗相关通知和服务指南；学生涉及医保、公费医疗、门诊、住院或报销类问题时，应优先查看公费医疗办公室“服务指南”栏目，并以页面最新说明为准。",
+        "source": "https://gyb.jnu.edu.cn/9256/list6.htm",
+        "keywords": "医保, 公费医疗, 服务指南, 门诊, 住院, 报销, 医疗, 校医院, 学生医保",
+    },
 ]
 
 
@@ -272,6 +326,8 @@ def service_type(card: dict) -> str:
         return "办事流程"
     if "流程" in title or "缴费" in title or "报名" in title or "补办" in title:
         return "办事流程"
+    if card["category"] in {"研究生事务", "就业档案", "医保医疗"}:
+        return "办事指引"
     if "表" in title or "模板" in title:
         return "表格模板"
     return "办事指引"
@@ -293,6 +349,12 @@ def entrance(card: dict) -> str:
         return "暨南大学网络与教育技术中心常见问答"
     if category == "餐饮服务":
         return "暨南大学官方学院/校区公开生活服务页面"
+    if category == "研究生事务":
+        return "暨南大学研究生院研究生服务中心栏目"
+    if category == "就业档案":
+        return "暨南大学学生就业指导中心网站"
+    if category == "医保医疗":
+        return "暨南大学公费医疗办公室服务指南栏目"
     if "补办" in title or "流程" in title or "成绩单" in title or "在学证明" in title:
         return "暨南大学本科生院“学生办事指南”栏目"
     if category in {"请假", "转专业", "学籍", "成绩证明"} and card["department"] == "本科生院":
@@ -314,6 +376,12 @@ def audience(card: dict) -> str:
         return "需要往返校区或查询交通信息的师生"
     if card["category"] in {"校历", "网络服务", "图书馆", "校园卡", "餐饮服务"}:
         return "需要查询校园公共服务的师生"
+    if card["category"] == "研究生事务":
+        return "暨南大学研究生或校友"
+    if card["category"] == "就业档案":
+        return "暨南大学毕业生或求职学生"
+    if card["category"] == "医保医疗":
+        return "需要办理医疗、医保或报销事项的师生"
     if "新生" in text:
         return "本科新生或相关申请人"
     if "全日制本科" in text:
@@ -338,6 +406,12 @@ def materials(card: dict) -> str:
         return "校园卡充值说明"
     if card["category"] == "餐饮服务":
         return "番禺校区食堂和餐厅营业时间"
+    if card["category"] == "研究生事务":
+        return "研究生服务中心业务办理说明"
+    if card["category"] == "就业档案":
+        return "毕业生就业手续相关栏目"
+    if card["category"] == "医保医疗":
+        return "公费医疗办公室服务指南"
     if "可见" in answer:
         return answer.split("可见", 1)[1].split("，发布时间", 1)[0].strip("“”\"'。”.")
     if "材料名称为" in answer:

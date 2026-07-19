@@ -46,7 +46,20 @@ def clean_html(html: str) -> tuple[str, str, str]:
 
 def classify(title: str, text: str, category_hint: str, attachments: list[str], categories: dict[str, list[str]]) -> list[str]:
     attachment_names = "\n".join(Path(urlparse(url).path).name for url in attachments)
-    core_hints = {"学籍表格", "办事指南", "新生表格", "学生事务"}
+    core_hints = {
+        "学籍表格",
+        "办事指南",
+        "新生表格",
+        "学生事务",
+        "研究生事务",
+        "研究生办事指南",
+        "研究生服务",
+        "就业档案",
+        "学生医保",
+        "图书馆服务",
+        "网络校园卡",
+        "校区生活",
+    }
     body_sample = text[:1200] if category_hint in core_hints else ""
     haystack = f"{title}\n{attachment_names}\n{body_sample}"
     matches: list[str] = []
@@ -61,7 +74,20 @@ def classify(title: str, text: str, category_hint: str, attachments: list[str], 
 
 
 def is_student_service_record(record: dict) -> bool:
-    important_hints = {"学籍表格", "办事指南", "新生表格", "学生事务"}
+    important_hints = {
+        "学籍表格",
+        "办事指南",
+        "新生表格",
+        "学生事务",
+        "研究生事务",
+        "研究生办事指南",
+        "研究生服务",
+        "就业档案",
+        "学生医保",
+        "图书馆服务",
+        "网络校园卡",
+        "校区生活",
+    }
     if record.get("category_hint") in important_hints:
         return True
     if any(category != "其他" for category in record.get("categories", [])):

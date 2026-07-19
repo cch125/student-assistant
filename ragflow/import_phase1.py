@@ -4,6 +4,8 @@ import os
 import sys
 from pathlib import Path
 
+from ragflow_auth import get_api_key
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RAGFLOW_SDK = PROJECT_ROOT.parent / "ragflow" / "sdk" / "python"
@@ -14,7 +16,7 @@ FILES_DIR = PROJECT_ROOT / "data" / "files"
 DATASET_NAME = os.getenv("RAGFLOW_DATASET_NAME", "暨南大学学生助手-第一阶段")
 DATASET_DESCRIPTION = "暨南大学学生常用办事指南、表格模板、学籍、新生、选课、推免、实践教学等公开官方资料。"
 BASE_URL = os.getenv("RAGFLOW_BASE_URL", "http://localhost:8080")
-API_KEY = os.getenv("RAGFLOW_API_KEY")
+REFRESH = os.getenv("RAGFLOW_REFRESH_PHASE1", "").lower() in {"1", "true", "yes"}
 SUPPORTED_EXTRA_SUFFIXES = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".md"}
 
 
@@ -40,15 +42,13 @@ def close_files(docs: list[dict]) -> None:
 
 
 def main() -> None:
-    if not API_KEY:
-        raise SystemExit("Missing RAGFLOW_API_KEY environment variable.")
     if not MARKDOWN_DIR.exists():
         raise SystemExit(f"Markdown directory not found: {MARKDOWN_DIR}")
 
     load_sdk()
     from ragflow_sdk import RAGFlow
 
-    rag = RAGFlow(api_key=API_KEY, base_url=BASE_URL)
+    rag = RAGFlow(api_key=get_api_key(), base_url=BASE_URL)
 
     try:
         datasets = rag.list_datasets(name=DATASET_NAME)
@@ -67,6 +67,12 @@ def main() -> None:
             chunk_method="naive",
         )
         print(f"Created dataset: {dataset.name} ({dataset.id})")
+
+    if REFRESH:
+        existing_docs = dataset.list_documents(page_size=100)
+        if existing_docs:
+            dataset.delete_documents(ids=[doc.id for doc in existing_docs])
+            print(f"Deleted {len(existing_docs)} existing documents for refresh.")
 
     existing_names = {doc.name for doc in dataset.list_documents(page_size=100)}
     all_docs = collect_upload_files()
