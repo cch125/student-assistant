@@ -11,4 +11,5 @@ data/files/
 data/cleaned/
 data/feedback/
 outputs/
+tmp/
 !.gitkeep

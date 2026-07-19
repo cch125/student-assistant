@@ -19,6 +19,7 @@ MINERU_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "manifest.jsonl
 MINERU_IMPORT_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "ragflow_import.jsonl"
 OUTPUT_HTML = PROJECT_ROOT / "outputs" / "pipeline_dashboard.html"
 COVERAGE_JSON = PROJECT_ROOT / "outputs" / "coverage_report.json"
+EXPERIMENT_RESULTS = PROJECT_ROOT / "outputs" / "chunk_experiment_results.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
 CATEGORIES_CONFIG = PROJECT_ROOT / "config" / "categories.json"
 SEEDS_CONFIG = PROJECT_ROOT / "config" / "seeds.json"
@@ -251,7 +252,13 @@ def text_quality(text: str) -> dict:
 def load_ragflow_status() -> list[dict]:
     script = r"""
 import os, pymysql, json
-names = ["暨南大学学生助手-第一阶段", "暨南大学学生助手-核心服务卡片"]
+names = [
+    "暨南大学学生助手-第一阶段",
+    "暨南大学学生助手-核心服务卡片",
+    "暨南大学学生助手-实验A-小块500",
+    "暨南大学学生助手-实验B-中块800",
+    "暨南大学学生助手-实验C-上下文1200",
+]
 conn = pymysql.connect(
     host=os.getenv('MYSQL_HOST'),
     port=int(os.getenv('MYSQL_PORT', '3306')),
@@ -304,6 +311,7 @@ def build_dashboard() -> str:
     markdown_files = sorted(RAGFLOW_MARKDOWN_DIR.glob("*.md")) if RAGFLOW_MARKDOWN_DIR.exists() else []
     service_cards = [parse_service_card(path) for path in sorted(SERVICE_CARD_DIR.glob("*.md"))] if SERVICE_CARD_DIR.exists() else []
     ragflow_status = load_ragflow_status()
+    experiment_results = read_json(EXPERIMENT_RESULTS, {})
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
     mineru_events = read_jsonl(MINERU_MANIFEST)
@@ -505,6 +513,29 @@ def build_dashboard() -> str:
 
     ragflow_cards_html = "\n".join(ragflow_cards) or "<p class=\"note\">未读取到 RAGFlow 知识库状态。</p>"
     ragflow_doc_rows_html = "\n".join(ragflow_doc_rows)
+    experiment_summaries = experiment_results.get("summaries", {}) if isinstance(experiment_results, dict) else {}
+    experiment_cards_html = "\n".join(
+        f"""
+        <article class="ragflow-card">
+          <h3>实验 {esc(key)} · {esc(item.get('chunk_tokens'))} tokens</h3>
+          <div class="metric-grid">
+            <b>{esc(item.get('document_count'))}<small>文档</small></b>
+            <b>{esc(item.get('chunk_count'))}<small>分块</small></b>
+            <b>{esc(round(float(item.get('mrr', 0)), 3))}<small>MRR</small></b>
+          </div>
+          <div class="parse-summary">
+            <span class="done">命中 {esc(item.get('hits'))}/{esc(item.get('questions'))}</span>
+            <span>重叠 {esc(item.get('overlap_percent'))}%</span>
+            <span>日志 97 条</span>
+          </div>
+          <div class="link-row">
+            <a href="http://localhost:8080/dataset/files/{esc(item.get('dataset_id'))}" target="_blank">打开文件列表</a>
+            <a href="http://localhost:8080/dataset/logs/{esc(item.get('dataset_id'))}" target="_blank">打开解析日志</a>
+          </div>
+        </article>
+        """
+        for key, item in sorted(experiment_summaries.items())
+    ) or "<p class=\"note\">分块对照实验尚未运行。</p>"
     unanswered_html = "\n".join(
         f"""
         <tr>
@@ -774,8 +805,14 @@ def build_dashboard() -> str:
 
     <section>
       <h2>RAGFlow 导入状态</h2>
-      <p class="note"><strong>知识库内容以这里的文档数、分块数和解析状态为准。</strong> RAGFlow 的“日志”页主要记录数据管道任务；本项目通过 API 直接上传和解析，因此日志页可能为空，这不表示知识库为空。不要打开 URL 里带 `undefined` 的页面，下面按钮会带真实知识库 ID。</p>
+      <p class="note"><strong>知识库内容以这里的文档数、分块数和解析状态为准。</strong> A/B/C 实验知识库均绑定 RAGFlow 数据流水线，文件解析会生成真实日志；下面按钮均携带正确的知识库 ID。</p>
       <div class="ragflow-grid">{ragflow_cards_html}</div>
+    </section>
+
+    <section>
+      <h2>分块对照实验</h2>
+      <p class="note">三组使用完全相同的 97 份清洗语料和 8 个固定问题，只改变分块大小与重叠比例。MRR 越高，相关内容越靠前。</p>
+      <div class="ragflow-grid">{experiment_cards_html}</div>
     </section>
 
     <section>

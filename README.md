@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.7.1`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+当前版本：`v0.8.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -147,6 +147,32 @@ MinerU 模型和运行环境不提交 GitHub；项目只提交可复现的安装
 
 ```text
 http://localhost:8080
+```
+
+### 数据流水线与分块对照实验
+
+先运行 MinerU 后的二次清洗：
+
+```powershell
+python multimodal\postprocess_mineru.py
+```
+
+创建或更新 A/B/C 数据流水线知识库，上传同一份清洗语料并解析：
+
+```powershell
+python ragflow\import_experiment_pipelines.py
+```
+
+解析完成后运行固定问题检索对照：
+
+```powershell
+python ragflow\evaluate_chunk_experiments.py
+```
+
+三套知识库分别使用 500 tokens/10% 重叠、800 tokens/10% 重叠、1200 tokens/15% 重叠。它们绑定真实的 RAGFlow 数据流水线，因此文件完成解析后会在知识库“日志”页生成记录。实验结果和入口也会显示在：
+
+```text
+http://127.0.0.1:8090/pipeline
 ```
 
 核心知识库名称：
