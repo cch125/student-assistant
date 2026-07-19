@@ -183,6 +183,18 @@ def main() -> None:
                     "--prune",
                 ],
             )
+            pipeline.stage(
+                "Sync native RAGFlow image chunks",
+                [
+                    "ragflow/sync_native_images.py",
+                    "--datasets",
+                    "A",
+                    "--datasets",
+                    "B",
+                    "--datasets",
+                    "C",
+                ],
+            )
         after = snapshot()
         changes = content_changes(before, after)
         state = {"generated_at": now_iso(), **changes, "hashes": after}

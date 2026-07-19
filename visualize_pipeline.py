@@ -29,6 +29,7 @@ CORE_RETRIEVAL_BENCHMARK = PROJECT_ROOT / "config" / "core_retrieval_benchmark.j
 QUALITY_GATE = PROJECT_ROOT / "outputs" / "quality_gate.json"
 AUTOMATIC_UPDATE_STATUS = PROJECT_ROOT / "outputs" / "automatic_update_status.json"
 AUTOMATIC_SCHEDULER_STATUS = PROJECT_ROOT / "outputs" / "automatic_scheduler_status.json"
+NATIVE_IMAGE_SYNC = PROJECT_ROOT / "outputs" / "native_image_sync.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
 CATEGORIES_CONFIG = PROJECT_ROOT / "config" / "categories.json"
 SEEDS_CONFIG = PROJECT_ROOT / "config" / "seeds.json"
@@ -333,6 +334,7 @@ def build_dashboard() -> str:
     quality_gate = read_json(QUALITY_GATE, {})
     automatic_update = read_json(AUTOMATIC_UPDATE_STATUS, {})
     automatic_scheduler = read_json(AUTOMATIC_SCHEDULER_STATUS, {})
+    native_image_sync = read_json(NATIVE_IMAGE_SYNC, {})
     media_library = public_media_library()
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
@@ -350,6 +352,21 @@ def build_dashboard() -> str:
     mineru_unsupported = sum(1 for row in mineru_rows if row.get("status") == "unsupported")
     media_summary = media_library.get("summary", {})
     visually_enriched = sum(bool(item.get("visual_description")) for item in media_library.get("items", []))
+    native_image_cards_html = "\n".join(
+        f"""
+        <article class="ragflow-card">
+          <h3>RAGFlow 实验 {esc(item.get('label'))}</h3>
+          <div class="metric-grid">
+            <b>{esc(item.get('verified', 0))}<small>image_id 已验证</small></b>
+            <b>{esc(item.get('created', 0))}<small>本次新增</small></b>
+            <b>{esc(item.get('failed', 0))}<small>失败</small></b>
+          </div>
+          <p class="note">知识库：{esc(item.get('dataset_name'))}<br>同步时间：{esc(native_image_sync.get('generated_at') or '-')}</p>
+          <a class="button" href="http://localhost:8080/dataset/files/{esc(item.get('dataset_id'))}" target="_blank">在 RAGFlow 查看</a>
+        </article>
+        """
+        for item in native_image_sync.get("datasets", [])
+    ) or '<p class="note">尚未执行 RAGFlow 原生图片同步。</p>'
     media_gallery_html = "\n".join(
         f"""
         <figure class="media-card">
@@ -1018,6 +1035,7 @@ def build_dashboard() -> str:
     <section>
       <h2>多模态资源</h2>
       <p class="note">已关联 {esc(media_summary.get('documents', 0))} 份文档、{esc(media_summary.get('media', 0))} 个视觉单元，其中图片 {esc(media_summary.get('images', 0))} 个、表格截图 {esc(media_summary.get('tables', 0))} 个，已有 {esc(visually_enriched)} 个视觉单元完成语义标注。点击缩略图可查看 MinerU 提取的原图。</p>
+      <div class="ragflow-grid">{native_image_cards_html}</div>
       <div class="media-gallery">{media_gallery_html}</div>
     </section>
 

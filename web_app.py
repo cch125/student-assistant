@@ -26,6 +26,7 @@ boot_marker("Loading core services")
 from core_services import ask_core_service
 boot_marker("Loading multimodal media library")
 from multimodal.media_library import attach_media, public_media_library, resolve_public_file
+from multimodal.query_image import analyze_query_image
 boot_marker("Loading pipeline dashboard")
 from visualize_pipeline import build_coverage_report, build_dashboard
 boot_marker("Imports ready")
@@ -33,7 +34,7 @@ boot_marker("Imports ready")
 
 HOST = os.getenv("ASSISTANT_HOST", "127.0.0.1")
 PORT = int(os.getenv("ASSISTANT_PORT", "8090"))
-MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", "16384"))
+MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", str(9 * 1024 * 1024)))
 MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "300"))
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))
 RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
@@ -150,8 +151,53 @@ HTML = r"""<!doctype html>
       gap: 10px;
       align-items: stretch;
     }
+    .photo-tools {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      min-height: 38px;
+    }
+    .photo-input { display: none; }
+    .photo-button, .photo-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--brand-dark);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .photo-button:hover, .photo-remove:hover { border-color: #88bdb5; background: #f4fbf9; }
+    .photo-remove { display: none; }
+    .photo-preview {
+      display: none;
+      width: 46px;
+      height: 46px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    .photo-note { flex: 1 1 260px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .image-analysis {
+      margin: 0 0 14px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--brand);
+      background: #f4fbf9;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.6;
+    }
     input {
       width: 100%;
+      min-width: 0;
       border: 1px solid #b8c2d0;
       border-radius: 6px;
       padding: 13px 14px;
@@ -474,14 +520,17 @@ HTML = r"""<!doctype html>
     .media-item img { aspect-ratio: 4 / 3; height: auto; min-height: 150px; }
     .guardrail { border-left: 3px solid var(--accent); }
     @media (max-width: 820px) {
+      html, body { max-width: 100%; overflow-x: hidden; }
       .topbar { align-items: stretch; flex-direction: column; gap: 10px; }
       .top-actions { justify-content: space-between; }
       .status { display: none; }
-      main { grid-template-columns: 1fr; padding: 16px 12px 32px; }
-      .workspace { min-height: auto; padding: 20px 16px; border-radius: 8px 8px 0 0; }
-      .side { min-height: auto; padding: 20px 16px; border-top: 0; border-left: 1px solid var(--line); border-radius: 0 0 8px 8px; }
+      main { width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr); padding: 16px 12px 32px; }
+      .workspace { width: 100%; min-width: 0; min-height: auto; padding: 20px 16px; border-radius: 8px 8px 0 0; }
+      .side { width: 100%; min-width: 0; min-height: auto; padding: 20px 16px; border-top: 0; border-left: 1px solid var(--line); border-radius: 0 0 8px 8px; }
       .query-title { font-size: 20px; }
       .ask-row { grid-template-columns: 1fr; }
+      .photo-tools { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+      .photo-note { overflow-wrap: anywhere; }
       .media-grid { grid-template-columns: 1fr; }
     }
   </style>
@@ -509,6 +558,13 @@ HTML = r"""<!doctype html>
         <input id="question" autocomplete="off" value="本科生请假申请表在哪里下载？" />
         <button id="askBtn">查询</button>
       </div>
+      <div class="photo-tools">
+        <label class="photo-button" for="photoInput">添加照片</label>
+        <input class="photo-input" id="photoInput" type="file" accept="image/jpeg,image/png,image/webp" />
+        <img class="photo-preview" id="photoPreview" alt="待识别照片预览" />
+        <button class="photo-remove" id="photoRemove" type="button">移除</button>
+        <span class="photo-note">支持 JPG、PNG、WebP，最大 6 MB。照片不在本系统保存，请先遮挡个人信息。</span>
+      </div>
       <div class="answer" id="answer">
         <p class="empty">可查询请假申请表、转专业申请表、成绩单和在学证明、新生入学资格申请表等第一批服务材料。</p>
       </div>
@@ -530,6 +586,10 @@ HTML = r"""<!doctype html>
     const input = document.querySelector("#question");
     const button = document.querySelector("#askBtn");
     const answer = document.querySelector("#answer");
+    const photoInput = document.querySelector("#photoInput");
+    const photoPreview = document.querySelector("#photoPreview");
+    const photoRemove = document.querySelector("#photoRemove");
+    let selectedImage = null;
 
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, char => ({
@@ -539,6 +599,14 @@ HTML = r"""<!doctype html>
 
     function render(data) {
       const guide = data.guide || {};
+      const imageAnalysis = data.image_analysis || {};
+      const imageAnalysisBlock = data.query_mode === "image" ? `
+        <div class="image-analysis">
+          <strong>照片识别</strong> ${escapeHtml(imageAnalysis.description || "已提取图片中的检索线索。")}
+          ${imageAnalysis.intent ? `<div>识别事项：${escapeHtml(imageAnalysis.intent)}</div>` : ""}
+          ${imageAnalysis.warning ? `<div>识别提示：${escapeHtml(imageAnalysis.warning)}</div>` : ""}
+        </div>
+      ` : "";
       const downloads = (data.downloads || []).map(item => `
         <a class="primary-link" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">直接下载：${escapeHtml(item.name)}</a>
       `).join("");
@@ -637,6 +705,7 @@ HTML = r"""<!doctype html>
       ` : "";
       answer.innerHTML = `
         <h2>回答${visibleResultCount > 1 ? `<span class="result-count">找到 ${visibleResultCount} 个相关结果</span>` : ""}</h2>
+        ${imageAnalysisBlock}
         <p class="answer-text ${data.ok ? "" : "error"}">${escapeHtml(data.answer)}</p>
         ${guardrail}
         ${actions}
@@ -650,18 +719,22 @@ HTML = r"""<!doctype html>
 
     async function ask() {
       const question = input.value.trim();
-      if (!question) {
+      if (!question && !selectedImage) {
         input.focus();
         return;
       }
       button.disabled = true;
       button.textContent = "查询中";
-      answer.innerHTML = `<p class="empty">正在检索知识库...</p>`;
+      answer.innerHTML = `<p class="empty">${selectedImage ? "正在识别照片并检索知识库..." : "正在检索知识库..."}</p>`;
       try {
         const response = await fetch("/api/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question })
+          body: JSON.stringify({
+            question,
+            image_base64: selectedImage ? selectedImage.base64 : "",
+            image_mime: selectedImage ? selectedImage.mime : ""
+          })
         });
         const data = await response.json();
         render(data);
@@ -674,6 +747,32 @@ HTML = r"""<!doctype html>
     }
 
     button.addEventListener("click", ask);
+    photoInput.addEventListener("change", () => {
+      const file = photoInput.files && photoInput.files[0];
+      if (!file) return;
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 6 * 1024 * 1024) {
+        selectedImage = null;
+        photoInput.value = "";
+        answer.innerHTML = `<p class="empty error">请选择不超过 6 MB 的 JPG、PNG 或 WebP 图片。</p>`;
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const value = String(reader.result || "");
+        selectedImage = { mime: file.type, base64: value.split(",", 2)[1] || "" };
+        photoPreview.src = value;
+        photoPreview.style.display = "block";
+        photoRemove.style.display = "inline-flex";
+      };
+      reader.readAsDataURL(file);
+    });
+    photoRemove.addEventListener("click", () => {
+      selectedImage = null;
+      photoInput.value = "";
+      photoPreview.removeAttribute("src");
+      photoPreview.style.display = "none";
+      photoRemove.style.display = "none";
+    });
     input.addEventListener("keydown", event => {
       if (event.key === "Enter") ask();
     });
@@ -779,10 +878,36 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(raw_body.decode("utf-8"))
             question = str(payload.get("question", "")).strip()
-            if not question or len(question) > MAX_QUESTION_LENGTH:
-                self.send_json({"ok": False, "answer": "问题不能为空，且不能超过300个字符。"}, status=400)
+            image_base64 = str(payload.get("image_base64", "")).strip()
+            image_mime = str(payload.get("image_mime", "")).strip().lower()
+            if (not question and not image_base64) or len(question) > MAX_QUESTION_LENGTH:
+                self.send_json({"ok": False, "answer": "请输入问题或选择照片，文字不能超过 300 个字符。"}, status=400)
                 return
-            result = attach_media(ask_core_service(question), question)
+            image_analysis = None
+            retrieval_question = question
+            if image_base64:
+                image_analysis = analyze_query_image(image_base64, image_mime, question)
+                retrieval_parts = [
+                    question,
+                    image_analysis.get("retrieval_query", ""),
+                    image_analysis.get("intent", ""),
+                    image_analysis.get("visible_text", ""),
+                ]
+                retrieval_question = "\n".join(part for part in retrieval_parts if part).strip()
+            result = attach_media(ask_core_service(retrieval_question), retrieval_question)
+            if image_analysis:
+                result["query_mode"] = "image"
+                result["image_analysis"] = {
+                    "description": image_analysis.get("description", ""),
+                    "intent": image_analysis.get("intent", ""),
+                    "warning": image_analysis.get("warning", ""),
+                }
+        except ValueError as exc:
+            message = str(exc)
+            if not message.startswith(("仅支持", "图片", "无法读取")):
+                message = "请求格式无效。"
+            self.send_json({"ok": False, "answer": message}, status=400)
+            return
         except Exception as exc:
             log(f"ask failed: {type(exc).__name__}: {exc}")
             self.send_json(

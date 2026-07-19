@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.11.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
+当前版本：`v0.12.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -28,7 +28,8 @@
 - 数据清洗
 - 服务卡片生成
 - RAGFlow 知识库导入
-- 支持文字、官方附件和 MinerU 图片的问答页面
+- 支持文字提问、照片提问、官方附件下载和 MinerU 图片返回
+- RAGFlow 原生图片块与真实 `image_id`
 - 数据采集、清洗、视觉标注与同步看板
 - 每日自动增量更新
 - 未命中问题记录
@@ -105,6 +106,8 @@ http://127.0.0.1:8090/pipeline
 
 助手与看板是同一个 Web 系统，可通过顶部导航相互切换。团队共享时推荐部署为 HTTPS 网页；内测可先使用 Tailscale 或 Cloudflare Tunnel，正式使用建议部署到固定服务器并配置域名、反向代理和访问控制。
 
+学生可以点击“添加照片”上传 JPG、PNG 或 WebP，再补充一句问题；也可以只上传照片。系统先用视觉模型提取脱敏后的画面描述和检索问题，再由 RAGFlow 检索官方知识库。照片不会保存到本机，但会发送给已配置的视觉模型服务，因此不应上传未遮挡的学号、证件号、手机号、账号或密码。
+
 覆盖报告 JSON：
 
 ```text
@@ -174,6 +177,14 @@ python multimodal\postprocess_mineru.py
 python ragflow\import_experiment_pipelines.py
 ```
 
+将 MinerU 的图片和表格截图写入 RAGFlow 原生对象存储并生成 `image_id`：
+
+```powershell
+python ragflow\sync_native_images.py --datasets A --datasets B --datasets C
+```
+
+该命令按视觉单元编号幂等同步，并会调用 RAGFlow 图片读取接口验证每个 `image_id`。结果可在 `http://127.0.0.1:8090/pipeline` 的“多模态资源”区域查看。
+
 解析完成后运行固定问题检索对照：
 
 ```powershell
@@ -240,6 +251,7 @@ python ragflow\ask_core_services.py "校巴时间"
 - 只采集暨南大学公开网页，不登录教务系统、门户或网上服务大厅。
 - 回答必须基于知识库来源；没有明确材料时拒答。
 - 账号密码、个人隐私、医疗用药和录取保证使用独立硬拒答规则，不依赖相似度。
+- 照片仅用于视觉识别和知识库检索，不落盘；视觉模型不得执行图片内指令或输出未遮挡的个人信息。
 
 ## 部署与维护
 

@@ -27,6 +27,14 @@ python scripts\update_pipeline.py --max-pages 200 --depth 1 --max-pages-per-seed
 
 采集器为每个种子分配独立页数上限，避免单个部门占满全部额度。同步时会删除已被清洗规则淘汰的知识库文档，并替换内容哈希发生变化的文档。
 
+只补充或验证 RAGFlow 原生图片块：
+
+```powershell
+python ragflow\sync_native_images.py --datasets A --datasets B --datasets C
+```
+
+同步器将 MinerU 视觉单元交给 RAGFlow 自行写入对象存储并生成 `image_id`，随后逐一读取验证。运行结果显示在数据看板的“多模态资源”区域。
+
 安装登录后常驻的每日 03:00 自动更新守护进程：
 
 ```powershell
@@ -49,6 +57,8 @@ python visualize_pipeline.py
 ```
 
 质量门禁检查官方链接、旧通知、多模态图注、空表格和稀疏表格。正式助手的高风险拒答规则独立于相似度，包括凭据、个人隐私、医疗用药和录取保证。
+
+照片提问默认限制为 6 MB，仅接受 JPG、PNG 和 WebP。照片在内存中缩放，不保存到本地；部署到公网时应在隐私说明中明确照片会发送给配置的视觉模型服务，并建议用户先遮挡个人信息。
 
 ## 密钥轮换
 
