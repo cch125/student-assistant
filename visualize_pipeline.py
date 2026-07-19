@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+VERSION_FILE = PROJECT_ROOT / "VERSION"
 RAW_MANIFEST = PROJECT_ROOT / "data" / "raw" / "manifest.jsonl"
 CLEANED_DOCS = PROJECT_ROOT / "data" / "cleaned" / "documents.jsonl"
 RAGFLOW_MARKDOWN_DIR = PROJECT_ROOT / "data" / "cleaned" / "ragflow_markdown"
@@ -54,6 +55,17 @@ def read_jsonl(path: Path) -> list[dict]:
 
 def esc(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
+
+
+def task_status(value: object) -> str:
+    return {
+        "0": "未开始",
+        "1": "处理中",
+        "2": "已取消",
+        "3": "完成",
+        "4": "失败",
+        "5": "已计划",
+    }.get(str(value).upper(), str(value))
 
 
 def rel(path: Path) -> str:
@@ -146,6 +158,7 @@ print(json.dumps(items, ensure_ascii=False))
 
 
 def build_dashboard() -> str:
+    project_version = VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "dev"
     raw_rows = read_jsonl(RAW_MANIFEST)
     cleaned_rows = read_jsonl(CLEANED_DOCS)
     markdown_files = sorted(RAGFLOW_MARKDOWN_DIR.glob("*.md")) if RAGFLOW_MARKDOWN_DIR.exists() else []
@@ -266,6 +279,10 @@ def build_dashboard() -> str:
                 """
             )
             continue
+        documents = kb.get("documents", [])
+        completed = sum(1 for doc in documents if task_status(doc.get("run")) == "完成")
+        failed = sum(1 for doc in documents if task_status(doc.get("run")) == "失败")
+        processing = max(len(documents) - completed - failed, 0)
         files_url = f"http://localhost:8080/dataset/files/{kb['id']}"
         logs_url = f"http://localhost:8080/dataset/logs/{kb['id']}"
         ragflow_cards.append(
@@ -278,6 +295,11 @@ def build_dashboard() -> str:
                 <b>{esc(kb['chunk_num'])}<small>分块</small></b>
                 <b>{esc(kb['token_num'])}<small>Token</small></b>
               </div>
+              <div class="parse-summary">
+                <span class="done">成功 {completed}</span>
+                <span>处理中 {processing}</span>
+                <span class="failed">失败 {failed}</span>
+              </div>
               <div class="link-row">
                 <a href="{files_url}" target="_blank">打开 RAGFlow 文件列表</a>
                 <a href="{logs_url}" target="_blank">打开 RAGFlow 日志</a>
@@ -286,12 +308,13 @@ def build_dashboard() -> str:
             """
         )
         for doc in kb.get("documents", [])[:80]:
+            run_status = task_status(doc.get("run"))
             ragflow_doc_rows.append(
                 f"""
                 <tr>
                   <td>{esc(kb['name'])}</td>
                   <td>{esc(doc.get('name'))}</td>
-                  <td class="{ 'ok' if doc.get('run') == 'DONE' else 'warn' }">{esc(doc.get('run'))}</td>
+                  <td class="{ 'ok' if run_status == '完成' else 'warn' }">{esc(run_status)}</td>
                   <td>{esc(doc.get('progress'))}</td>
                   <td>{esc(doc.get('chunk_num'))}</td>
                   <td>{esc(doc.get('token_num'))}</td>
@@ -429,6 +452,9 @@ def build_dashboard() -> str:
     .ragflow-card {{ border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: #fbfcfe; }}
     .ragflow-card h3 {{ margin: 0 0 12px; font-size: 16px; }}
     .metric-row {{ display: grid; gap: 4px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }}
+    .parse-summary {{ display: flex; gap: 12px; margin: 12px 0; color: var(--muted); font-size: 13px; }}
+    .parse-summary .done {{ color: #087f5b; }}
+    .parse-summary .failed {{ color: #c92a2a; }}
     code {{ font-family: Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }}
     .metric-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }}
     .metric-grid b {{ background: #eef7f5; color: var(--brand); border-radius: 6px; padding: 10px; font-size: 24px; }}
@@ -445,7 +471,7 @@ def build_dashboard() -> str:
 <body>
   <header>
     <h1>暨南大学学生助手 · 数据流程可视化</h1>
-    <p>从官网采集到 RAGFlow 服务卡片，每一步的输入、输出和质量检查都在这里。</p>
+    <p>版本 v{esc(project_version)} · 从官网采集到 RAGFlow 服务卡片，每一步的输入、输出和质量检查都在这里。</p>
   </header>
   <main>
     <section>
@@ -466,7 +492,7 @@ def build_dashboard() -> str:
 
     <section>
       <h2>RAGFlow 导入状态</h2>
-      <p class="note">这里显示的是已经导入 RAGFlow 后的知识库状态。不要打开 URL 里带 `undefined` 的页面，下面按钮会带真实知识库 ID。</p>
+      <p class="note"><strong>知识库内容以这里的文档数、分块数和解析状态为准。</strong> RAGFlow 的“日志”页主要记录数据管道任务；本项目通过 API 直接上传和解析，因此日志页可能为空，这不表示知识库为空。不要打开 URL 里带 `undefined` 的页面，下面按钮会带真实知识库 ID。</p>
       <div class="ragflow-grid">{ragflow_cards_html}</div>
     </section>
 

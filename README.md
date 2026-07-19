@@ -1,5 +1,7 @@
 # 暨南大学学生助手
 
+当前版本：`v0.3.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
 - 请假申请表在哪里下载？
@@ -130,3 +132,19 @@ python ragflow\ask_core_services.py "校巴时间"
 - 不提交 API Key、`.env`、RAGFlow token、反馈日志或爬取原始文件。
 - 只采集暨南大学公开网页，不登录教务系统、门户或网上服务大厅。
 - 回答必须基于知识库来源；没有明确材料时拒答。
+
+## 版本发布规则
+
+大更新完成后按以下顺序发布：
+
+1. 更新 `VERSION` 和 `CHANGELOG.md`。
+2. 运行 `python scripts\check_release.py` 检查版本记录。
+3. 提交代码并创建带说明的 `vX.Y.Z` Git 标签。
+4. 同时推送 `main` 分支和版本标签到 GitHub。
+
+查看历史版本：
+
+```powershell
+git tag --list
+git log --oneline --decorate
+```
