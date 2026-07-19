@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from pathlib import Path
+from urllib.parse import unquote, urljoin, urlparse
+
+import requests
+from bs4 import BeautifulSoup
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CARD_DIR = ROOT / "data" / "cleaned" / "service_cards"
+DOWNLOAD_SUFFIXES = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".rar"}
+REQUEST_HEADERS = {"User-Agent": "JNU-Student-Assistant/0.4 (+public educational project)"}
 
 
 CARDS = [
@@ -22,9 +29,12 @@ CARDS = [
         "title": "转专业申请表",
         "category": "转专业",
         "department": "本科生院",
-        "answer": "转专业申请表在暨南大学本科生院“下载服务 - 学籍相关文件”栏目中，可见“转专业申请表（内招生）”和“转专业申请表（外招生）”，发布时间为 2025-07-16；内招生申请表可直接打开具体事项页面。",
-        "source": "https://jwc.jnu.edu.cn/2025/0716/c6757a840739/page.htm",
-        "keywords": "转专业, 转专业申请表, 内招生, 外招生, 学籍相关文件",
+        "answer": "根据暨南大学本科生院 2025—2026 学年转专业通知，学生须在规定时间登录新综合教务系统填写《转专业申请表》，提交后打印签名；当前申请表由系统生成，不提供独立公开下载文件。",
+        "source": "https://jwc.jnu.edu.cn/2026/0424/c6765a854250/page.htm",
+        "entrance": "暨南大学新综合教务系统转专业申请入口",
+        "materials": "系统生成的转专业申请表、成绩单及通知要求的证明材料",
+        "service_type": "在线办理",
+        "keywords": "转专业, 转专业申请表, 内招生, 外招生, 新综合教务系统, 转专业通知",
     },
     {
         "filename": "复学休学申请表.md",
@@ -76,8 +86,10 @@ CARDS = [
         "title": "本科学生主动退学申请表",
         "category": "学籍",
         "department": "本科生院",
-        "answer": "本科学生主动退学申请表在暨南大学本科生院“下载服务 - 学籍相关文件”栏目中，材料名称为“本科学生主动退学申请表”，发布时间为 2025-07-16，可直接打开具体事项页面下载。",
-        "source": "https://jwc.jnu.edu.cn/2025/0716/c6757a840738/page.htm",
+        "answer": "暨南大学本科生院“学籍相关文件”栏目列有“本科学生主动退学申请表”（2025-07-16），但具体文件页面当前需要统一身份认证，未发现可公开直连下载的官方附件；请从学校认证入口办理或向学院教科办索取。",
+        "source": "https://jwc.jnu.edu.cn/6747/list.htm",
+        "entrance": "暨南大学统一身份认证后的本科生院学籍业务入口",
+        "service_type": "认证办理",
         "keywords": "退学, 主动退学, 本科学生主动退学申请表, 学籍相关文件, 本科生院",
     },
     {
@@ -202,8 +214,8 @@ CARDS = [
         "title": "暨南大学丝路奖学金申请表",
         "category": "奖助学金",
         "department": "招生办公室",
-        "answer": "暨南大学丝路奖学金申请表在暨南大学招生办公室“下载中心”栏目中，材料名称为“暨南大学丝路奖学金申请表”，发布时间为 2016-04-21，可直接打开文件链接下载。",
-        "source": "https://zsb.jnu.edu.cn/_upload/article/files/00/2a/38b28e3348e78311efcfe6ccaac1/ac827893-dcd5-4480-9db7-56606e6b95e5.doc",
+        "answer": "暨南大学招生办公室下载中心仍列有“暨南大学丝路奖学金申请表”（2016-04-21），但原附件直链当前返回 403，无法作为可靠公开下载通道；请从招生办公室下载中心查看最新材料或联系招生办公室确认。",
+        "source": "https://zsb.jnu.edu.cn/3562/list2.htm",
         "keywords": "奖学金, 丝路奖学金, 暨南大学丝路奖学金申请表, 招生办公室, 下载中心",
     },
     {
@@ -318,6 +330,8 @@ CARDS = [
 
 
 def service_type(card: dict) -> str:
+    if card.get("service_type"):
+        return card["service_type"]
     filename = card["filename"]
     title = card["title"]
     if card["category"] in {"交通出行", "校历", "通知公告", "餐饮服务"}:
@@ -334,6 +348,8 @@ def service_type(card: dict) -> str:
 
 
 def entrance(card: dict) -> str:
+    if card.get("entrance"):
+        return card["entrance"]
     source = card["source"]
     title = card["title"]
     category = card["category"]
@@ -392,6 +408,8 @@ def audience(card: dict) -> str:
 
 
 def materials(card: dict) -> str:
+    if card.get("materials"):
+        return card["materials"]
     title = card["title"]
     answer = card["answer"]
     if card["category"] == "交通出行":
@@ -460,6 +478,51 @@ def notes(card: dict) -> list[str]:
     ]
 
 
+def is_official_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname == "jnu.edu.cn" or hostname.endswith(".jnu.edu.cn")
+
+
+def download_name(url: str, link_text: str, fallback: str) -> str:
+    text = " ".join(link_text.split()).strip()
+    if text:
+        return text
+    filename = unquote(PurePosixPath(urlparse(url).path).name)
+    return filename or fallback
+
+
+def discover_downloads(card: dict) -> list[dict[str, str]]:
+    source = card["source"]
+    source_suffix = Path(urlparse(source).path).suffix.lower()
+    if source_suffix in DOWNLOAD_SUFFIXES and is_official_url(source):
+        return [{"name": download_name(source, "", materials(card)), "url": source}]
+
+    try:
+        response = requests.get(source, headers=REQUEST_HEADERS, timeout=15)
+        response.raise_for_status()
+        response.encoding = response.apparent_encoding or response.encoding
+    except requests.RequestException as exc:
+        print(f"Warning: could not inspect downloads for {card['title']}: {exc}")
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    downloads: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for link in soup.select("a[href]"):
+        url = urljoin(source, link.get("href", "").strip())
+        suffix = Path(urlparse(url).path).suffix.lower()
+        if suffix not in DOWNLOAD_SUFFIXES or not is_official_url(url) or url in seen:
+            continue
+        seen.add(url)
+        downloads.append(
+            {
+                "name": download_name(url, link.get_text(" ", strip=True), materials(card)),
+                "url": url,
+            }
+        )
+    return downloads
+
+
 def main() -> None:
     CARD_DIR.mkdir(parents=True, exist_ok=True)
     for old in CARD_DIR.glob("*.md"):
@@ -467,6 +530,11 @@ def main() -> None:
     for card in CARDS:
         step_block = "\n".join(f"{idx}. {step}" for idx, step in enumerate(steps(card), start=1))
         note_block = "\n".join(f"- {note}" for note in notes(card))
+        downloads = discover_downloads(card)
+        download_block = ""
+        if downloads:
+            download_lines = "\n".join(f'- {item["name"]} | {item["url"]}' for item in downloads)
+            download_block = f"\n下载文件：\n{download_lines}\n"
         body = f"""# {card["title"]}
 
 类别：{card["category"]}
@@ -488,6 +556,7 @@ def main() -> None:
 
 注意事项：
 {note_block}
+{download_block}
 
 来源链接：{card["source"]}
 

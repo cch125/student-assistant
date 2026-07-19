@@ -230,6 +230,19 @@ HTML = r"""<!doctype html>
       margin-bottom: 12px;
     }
     .primary-link:hover { background: var(--brand-dark); text-decoration: none; }
+    .action-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .action-links .primary-link { margin-bottom: 0; }
+    .source-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--brand-dark);
+      font-weight: 700;
+    }
     .mini-meta {
       display: flex;
       flex-wrap: wrap;
@@ -378,9 +391,14 @@ HTML = r"""<!doctype html>
 
     function render(data) {
       const guide = data.guide || {};
-      const source = data.source_url
-        ? `<a class="primary-link" href="${escapeHtml(data.source_url)}" target="_blank" rel="noreferrer">打开目的链接</a>`
+      const downloads = (data.downloads || []).map(item => `
+        <a class="primary-link" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">直接下载：${escapeHtml(item.name)}</a>
+      `).join("");
+      const sourceIsDownload = (data.downloads || []).some(item => item.url === data.source_url);
+      const source = data.source_url && !sourceIsDownload
+        ? `<a class="source-link" href="${escapeHtml(data.source_url)}" target="_blank" rel="noreferrer">查看官方说明</a>`
         : "";
+      const actions = downloads || source ? `<div class="action-links">${downloads}${source}</div>` : "";
       const miniMeta = data.ok ? `
         <div class="mini-meta">
           ${guide.service_type ? `<span>${escapeHtml(guide.service_type)}</span>` : ""}
@@ -427,7 +445,7 @@ HTML = r"""<!doctype html>
         <h2>回答</h2>
         <p class="answer-text ${data.ok ? "" : "error"}">${escapeHtml(data.answer)}</p>
         ${guardrail}
-        ${source}
+        ${actions}
         ${miniMeta}
         ${guideCard}
         ${matchDetails}

@@ -47,6 +47,19 @@ def pick_block(content: str, field: str) -> list[str]:
     return lines
 
 
+def pick_downloads(content: str) -> list[dict[str, str]]:
+    downloads = []
+    for line in pick_block(content, "下载文件"):
+        name, separator, url = line.partition("|")
+        if not separator:
+            continue
+        name = name.strip()
+        url = url.strip()
+        if name and url.startswith(("https://", "http://")):
+            downloads.append({"name": name, "url": url})
+    return downloads
+
+
 def local_card_content(document_name: str, fallback: str) -> str:
     if document_name:
         path = SERVICE_CARD_DIR / document_name
@@ -74,6 +87,7 @@ def match_from_content(document_name: str, content: str, similarity: float) -> d
         "similarity": similarity,
         "answer": pick_field(content, "直接回答"),
         "source_url": pick_field(content, "来源链接"),
+        "downloads": pick_downloads(content),
         "guide": guide_from_content(content),
         "snippet": " ".join(content.split())[:300],
     }
@@ -81,7 +95,7 @@ def match_from_content(document_name: str, content: str, similarity: float) -> d
 
 def local_keyword_fallback(question: str) -> dict[str, Any] | None:
     question_text = question.lower()
-    best: tuple[int, Path, str] | None = None
+    best: tuple[int, bool, Path, str] | None = None
     for path in SERVICE_CARD_DIR.glob("*.md"):
         content = path.read_text(encoding="utf-8", errors="replace")
         keywords = [
@@ -91,16 +105,18 @@ def local_keyword_fallback(question: str) -> dict[str, Any] | None:
         ]
         title = path.stem.lower()
         score = 0
-        if title and title in question_text:
+        exact_title = bool(title and title in question_text)
+        if exact_title:
             score += 3
         for keyword in keywords:
             if len(keyword) >= 2 and keyword in question_text:
                 score += 2 if len(keyword) >= 4 else 1
         if score >= 2 and (best is None or score > best[0]):
-            best = (score, path, content)
+            best = (score, exact_title, path, content)
     if best is None:
         return None
-    return match_from_content(best[1].name, best[2], LOCAL_KEYWORD_SIMILARITY)
+    similarity = 0.99 if best[1] else min(0.85, LOCAL_KEYWORD_SIMILARITY + best[0] * 0.1)
+    return match_from_content(best[2].name, best[3], similarity)
 
 
 def load_ragflow():
@@ -138,6 +154,7 @@ def ask_core_service(question: str) -> dict[str, Any]:
             "ok": False,
             "answer": "请输入一个问题。",
             "source_url": "",
+            "downloads": [],
             "document_name": "",
             "similarity": 0,
             "matches": [],
@@ -179,6 +196,7 @@ def ask_core_service(question: str) -> dict[str, Any]:
             "ok": False,
             "answer": "当前知识库未收录明确材料。",
             "source_url": "",
+            "downloads": [],
             "document_name": "",
             "similarity": 0,
             "matches": matches,
@@ -193,6 +211,7 @@ def ask_core_service(question: str) -> dict[str, Any]:
             "ok": False,
             "answer": "当前知识库未收录明确材料。为避免误导学生，我不会根据不相关资料猜测答案。",
             "source_url": "",
+            "downloads": [],
             "document_name": best["document_name"],
             "similarity": best["similarity"],
             "matches": matches,
@@ -205,6 +224,7 @@ def ask_core_service(question: str) -> dict[str, Any]:
         "ok": True,
         "answer": best["answer"],
         "source_url": best["source_url"],
+        "downloads": best.get("downloads", []),
         "document_name": best["document_name"],
         "similarity": best["similarity"],
         "matches": matches,
