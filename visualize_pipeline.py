@@ -15,6 +15,8 @@ RAW_MANIFEST = PROJECT_ROOT / "data" / "raw" / "manifest.jsonl"
 CLEANED_DOCS = PROJECT_ROOT / "data" / "cleaned" / "documents.jsonl"
 RAGFLOW_MARKDOWN_DIR = PROJECT_ROOT / "data" / "cleaned" / "ragflow_markdown"
 SERVICE_CARD_DIR = PROJECT_ROOT / "data" / "cleaned" / "service_cards"
+MINERU_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "manifest.jsonl"
+MINERU_IMPORT_MANIFEST = PROJECT_ROOT / "data" / "cleaned" / "mineru" / "ragflow_import.jsonl"
 OUTPUT_HTML = PROJECT_ROOT / "outputs" / "pipeline_dashboard.html"
 COVERAGE_JSON = PROJECT_ROOT / "outputs" / "coverage_report.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
@@ -304,6 +306,13 @@ def build_dashboard() -> str:
     ragflow_status = load_ragflow_status()
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
     coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
+    mineru_events = read_jsonl(MINERU_MANIFEST)
+    mineru_import_events = read_jsonl(MINERU_IMPORT_MANIFEST)
+    mineru_latest = {row.get("source"): row for row in mineru_events if row.get("source")}
+    mineru_rows = sorted(mineru_latest.values(), key=lambda row: row.get("finished_at", ""), reverse=True)
+    mineru_success = sum(1 for row in mineru_rows if row.get("status") == "success")
+    mineru_failed = sum(1 for row in mineru_rows if row.get("status") == "failed")
+    mineru_unsupported = sum(1 for row in mineru_rows if row.get("status") == "unsupported")
 
     raw_pages = [row for row in raw_rows if row.get("kind") == "page"]
     raw_attachments = [row for row in raw_rows if row.get("kind") == "attachment"]
@@ -320,6 +329,7 @@ def build_dashboard() -> str:
     quality_issues = [row for row in cleaned_quality if row["mojibake_hits"] > 0]
 
     step_cards = [
+        ("M", "MinerU 多模态清洗", mineru_success, "解析附件版面、OCR 文字、表格和图片，生成结构化 Markdown"),
         ("1", "公开网页采集", len(raw_pages), "保存学校官网 HTML 原文和来源元数据"),
         ("2", "附件下载", len(raw_attachments), "保存 PDF、Word、Excel 等公开附件"),
         ("3", "清洗结构化文档", len(cleaned_rows), "抽取标题、部门、日期、类别、正文、来源"),
@@ -327,6 +337,28 @@ def build_dashboard() -> str:
         ("5", "核心服务卡片", len(service_cards), "整理为稳定问答使用的高频事项卡片"),
         ("6", "质量问题提示", len(quality_issues), "标记疑似乱码或需要人工复核的清洗结果"),
     ]
+
+    mineru_rows_html = "\n".join(
+        f"""
+        <tr>
+          <td>{esc(row.get('source'))}</td>
+          <td class="{'ok' if row.get('status') == 'success' else 'warn'}">{esc(row.get('status'))}</td>
+          <td>{esc(row.get('backend', ''))}</td>
+          <td>{esc(row.get('duration_seconds', ''))}</td>
+          <td>{esc(row.get('image_count', 0))}</td>
+          <td>{esc((row.get('content_list_count') or 0) + (row.get('middle_json_count') or 0))}</td>
+          <td>{esc(row.get('ragflow_markdown') or row.get('reason') or row.get('error', '')[:160])}</td>
+        </tr>
+        """
+        for row in mineru_rows
+    ) or "<tr><td colspan=\"7\">尚未运行 MinerU</td></tr>"
+    mineru_imported_names = {
+        row.get("document_name") for row in mineru_import_events if row.get("document_name")
+    }
+    mineru_summary_html = (
+        f"成功 {mineru_success} 个，失败 {mineru_failed} 个，不支持 {mineru_unsupported} 个，"
+        f"已提交 RAGFlow {len(mineru_imported_names)} 个。"
+    )
 
     service_rows = "\n".join(
         f"""
@@ -577,7 +609,7 @@ def build_dashboard() -> str:
     h2 {{ margin: 0 0 14px; font-size: 18px; }}
     .steps {{
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
     }}
     .step {{
@@ -735,6 +767,17 @@ def build_dashboard() -> str:
       <h2>RAGFlow 导入状态</h2>
       <p class="note"><strong>知识库内容以这里的文档数、分块数和解析状态为准。</strong> RAGFlow 的“日志”页主要记录数据管道任务；本项目通过 API 直接上传和解析，因此日志页可能为空，这不表示知识库为空。不要打开 URL 里带 `undefined` 的页面，下面按钮会带真实知识库 ID。</p>
       <div class="ragflow-grid">{ragflow_cards_html}</div>
+    </section>
+
+    <section>
+      <h2>MinerU 多模态清洗</h2>
+      <p class="note">{mineru_summary_html} 此处展示附件经过 MinerU 后的 Markdown、OCR、表格、图片和结构化 JSON 产物，再由导入器送入第一阶段综合知识库。</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>原始附件</th><th>状态</th><th>后端</th><th>耗时(秒)</th><th>图片</th><th>结构化 JSON</th><th>RAGFlow 文档/说明</th></tr></thead>
+          <tbody>{mineru_rows_html}</tbody>
+        </table>
+      </div>
     </section>
 
     <section>

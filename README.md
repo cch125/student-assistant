@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.6.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+当前版本：`v0.7.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -35,6 +35,7 @@
 
 ```text
 cleaner/       数据清洗和服务卡片生成
+multimodal/    MinerU 多模态附件清洗
 crawler/       暨南大学公开网页采集
 ragflow/       RAGFlow 导入、检索和测试脚本
 scripts/       辅助脚本
@@ -98,6 +99,47 @@ http://127.0.0.1:8090/pipeline
 ```text
 http://127.0.0.1:8090/api/coverage
 ```
+
+## MinerU 多模态清洗
+
+项目使用独立 Python 3.12 环境运行 MinerU，不改动主项目 Python。当前机器的运行目录为：
+
+```text
+D:\student-assistant-runtime
+```
+
+环境安装命令：
+
+```powershell
+$env:UV_CACHE_DIR='D:\student-assistant-runtime\uv-cache'
+$env:UV_PYTHON_INSTALL_DIR='D:\student-assistant-runtime\python'
+python -m uv python install 3.12
+python -m uv venv 'D:\student-assistant-runtime\mineru-venv' --python 3.12
+python -m uv pip install --python 'D:\student-assistant-runtime\mineru-venv\Scripts\python.exe' -r requirements-mineru.txt
+& 'D:\student-assistant-runtime\mineru-venv\Scripts\mineru-models-download.exe' --source modelscope --model_type pipeline
+```
+
+解析全部支持的附件并自动导入 RAGFlow 第一阶段综合知识库：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_mineru.ps1
+```
+
+只处理指定附件：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_mineru.ps1 -Path 'data\files\example.pdf'
+```
+
+MinerU 当前处理 PDF、图片、DOCX、PPTX、XLSX。旧 `.doc`、`.xls` 和压缩包会标记为不支持，并继续保留原 RAGFlow 解析结果。成功生成 MinerU 版本后，导入器会删除知识库中同名原始附件，避免重复检索。
+
+清洗状态、图片数量、结构化 JSON 数量和 RAGFlow 导入结果可在以下页面查看：
+
+```text
+http://127.0.0.1:8090/pipeline
+```
+
+MinerU 模型和运行环境不提交 GitHub；项目只提交可复现的安装说明和处理代码。
 
 ## RAGFlow
 
