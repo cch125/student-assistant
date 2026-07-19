@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "ragflow"))
 
 from core_services import ask_core_service
-from visualize_pipeline import build_dashboard
+from visualize_pipeline import build_coverage_report, build_dashboard
 
 
 HOST = "127.0.0.1"
@@ -570,6 +570,9 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/coverage":
+            self.send_json(build_coverage_report())
+            return
         if path == "/pipeline":
             body = build_dashboard().encode("utf-8")
             self.send_response(200)

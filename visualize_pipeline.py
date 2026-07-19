@@ -16,7 +16,10 @@ CLEANED_DOCS = PROJECT_ROOT / "data" / "cleaned" / "documents.jsonl"
 RAGFLOW_MARKDOWN_DIR = PROJECT_ROOT / "data" / "cleaned" / "ragflow_markdown"
 SERVICE_CARD_DIR = PROJECT_ROOT / "data" / "cleaned" / "service_cards"
 OUTPUT_HTML = PROJECT_ROOT / "outputs" / "pipeline_dashboard.html"
+COVERAGE_JSON = PROJECT_ROOT / "outputs" / "coverage_report.json"
 UNANSWERED_LOG = PROJECT_ROOT / "data" / "feedback" / "unanswered_questions.jsonl"
+CATEGORIES_CONFIG = PROJECT_ROOT / "config" / "categories.json"
+SEEDS_CONFIG = PROJECT_ROOT / "config" / "seeds.json"
 RAGFLOW_KB_NAMES = ["暨南大学学生助手-第一阶段", "暨南大学学生助手-核心服务卡片"]
 
 MOJIBAKE_MARKERS = [
@@ -51,6 +54,15 @@ def read_jsonl(path: Path) -> list[dict]:
             except json.JSONDecodeError:
                 rows.append({"_parse_error": line[:200]})
     return rows
+
+
+def read_json(path: Path, default: object) -> object:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return default
 
 
 def esc(value: object) -> str:
@@ -94,6 +106,132 @@ def parse_service_card(path: Path) -> dict:
         "source_url": field("来源链接"),
         "keywords": field("关键词"),
         "length": len(text),
+    }
+
+
+def question_matches_cards(question: str, service_cards: list[dict]) -> bool:
+    question_text = question.lower()
+    for card in service_cards:
+        terms = [card.get("title", ""), *re.split(r"[,，]", card.get("keywords", ""))]
+        if any(term.strip().lower() in question_text for term in terms if len(term.strip()) >= 2):
+            return True
+    return False
+
+
+def build_coverage_report(
+    cleaned_rows: list[dict] | None = None,
+    service_cards: list[dict] | None = None,
+    unanswered_rows: list[dict] | None = None,
+) -> dict:
+    cleaned_rows = read_jsonl(CLEANED_DOCS) if cleaned_rows is None else cleaned_rows
+    if service_cards is None:
+        service_cards = (
+            [parse_service_card(path) for path in sorted(SERVICE_CARD_DIR.glob("*.md"))]
+            if SERVICE_CARD_DIR.exists()
+            else []
+        )
+    unanswered_rows = read_jsonl(UNANSWERED_LOG) if unanswered_rows is None else unanswered_rows
+
+    categories_config = read_json(CATEGORIES_CONFIG, {})
+    category_names = [name for name in categories_config if name != "其他"] if isinstance(categories_config, dict) else []
+    seeds_config = read_json(SEEDS_CONFIG, {})
+    seeds = seeds_config.get("seeds", []) if isinstance(seeds_config, dict) else []
+    department_names = list(dict.fromkeys(seed.get("department", "") for seed in seeds if seed.get("department")))
+
+    card_categories = Counter(card.get("category") or "未标注" for card in service_cards)
+    cleaned_categories: Counter[str] = Counter()
+    for row in cleaned_rows:
+        for category in row.get("categories") or []:
+            cleaned_categories[category] += 1
+
+    category_rows = []
+    for name in category_names:
+        card_count = card_categories[name]
+        source_count = cleaned_categories[name]
+        if card_count > 0:
+            status = "核心卡片"
+        elif source_count > 0:
+            status = "仅有资料"
+        else:
+            status = "未覆盖"
+        category_rows.append(
+            {"name": name, "card_count": card_count, "source_count": source_count, "status": status}
+        )
+
+    card_departments = Counter(card.get("department") or "未标注" for card in service_cards)
+    cleaned_departments = Counter(row.get("department") or "未标注" for row in cleaned_rows)
+    department_rows = []
+    for name in department_names:
+        card_count = card_departments[name]
+        source_count = cleaned_departments[name]
+        status = "核心卡片" if card_count else ("仅有资料" if source_count else "未覆盖")
+        department_rows.append(
+            {"name": name, "card_count": card_count, "source_count": source_count, "status": status}
+        )
+
+    feedback_counts: Counter[str] = Counter()
+    feedback_details: dict[str, dict] = {}
+    for row in unanswered_rows:
+        question = " ".join(str(row.get("question", "")).split()).strip()
+        if len(question) < 2 or not re.search(r"[\w\u4e00-\u9fff]", question) or "火星" in question:
+            continue
+        feedback_counts[question] += 1
+        feedback_details[question] = row
+
+    feedback_rows = []
+    for question, count in feedback_counts.most_common(20):
+        resolved = question_matches_cards(question, service_cards)
+        detail = feedback_details[question]
+        feedback_rows.append(
+            {
+                "question": question,
+                "count": count,
+                "status": "可能已补充" if resolved else "待补充",
+                "reason": detail.get("reason", ""),
+                "top_document": (detail.get("top_matches") or [{}])[0].get("document_name", ""),
+            }
+        )
+
+    priorities = []
+    for row in category_rows:
+        if row["card_count"] == 0:
+            priority = "高" if row["source_count"] == 0 else "中"
+            action = "补充官方数据源并制作核心服务卡片" if row["source_count"] == 0 else "从现有清洗资料制作核心服务卡片"
+            priorities.append({"priority": priority, "type": "事项类别", "name": row["name"], "action": action})
+        elif row["card_count"] == 1:
+            priorities.append(
+                {"priority": "低", "type": "事项类别", "name": row["name"], "action": "补充更多高频事项，避免单卡片覆盖过窄"}
+            )
+    for row in department_rows:
+        if row["card_count"] == 0:
+            priority = "中" if row["source_count"] else "高"
+            action = "从该部门现有资料制作核心服务卡片" if row["source_count"] else "新增该部门官方数据源"
+            priorities.append({"priority": priority, "type": "责任部门", "name": row["name"], "action": action})
+    for row in feedback_rows:
+        if row["status"] == "待补充":
+            priorities.append(
+                {"priority": "高", "type": "学生问题", "name": row["question"], "action": "查找官方来源并补充服务卡片"}
+            )
+
+    priority_order = {"高": 0, "中": 1, "低": 2}
+    priorities.sort(key=lambda row: (priority_order[row["priority"]], row["type"], row["name"]))
+    covered_categories = sum(1 for row in category_rows if row["card_count"] > 0)
+    covered_departments = sum(1 for row in department_rows if row["card_count"] > 0)
+    return {
+        "version": VERSION_FILE.read_text(encoding="utf-8").strip() if VERSION_FILE.exists() else "dev",
+        "summary": {
+            "target_categories": len(category_rows),
+            "covered_categories": covered_categories,
+            "category_coverage_percent": round(covered_categories * 100 / len(category_rows), 1) if category_rows else 0,
+            "target_departments": len(department_rows),
+            "covered_departments": covered_departments,
+            "feedback_questions": sum(feedback_counts.values()),
+            "priority_gaps": sum(1 for row in priorities if row["priority"] in {"高", "中"}),
+        },
+        "categories": category_rows,
+        "departments": department_rows,
+        "feedback": feedback_rows,
+        "priorities": priorities,
     }
 
 
@@ -165,6 +303,7 @@ def build_dashboard() -> str:
     service_cards = [parse_service_card(path) for path in sorted(SERVICE_CARD_DIR.glob("*.md"))] if SERVICE_CARD_DIR.exists() else []
     ragflow_status = load_ragflow_status()
     unanswered_rows = read_jsonl(UNANSWERED_LOG)
+    coverage = build_coverage_report(cleaned_rows, service_cards, unanswered_rows)
 
     raw_pages = [row for row in raw_rows if row.get("kind") == "page"]
     raw_attachments = [row for row in raw_rows if row.get("kind") == "attachment"]
@@ -338,6 +477,61 @@ def build_dashboard() -> str:
         for row in unanswered_rows[-50:]
     ) or "<tr><td colspan=\"5\">暂无未收录问题</td></tr>"
 
+    coverage_summary = coverage["summary"]
+    coverage_metrics_html = "\n".join(
+        f"<div class=\"coverage-metric\"><b>{esc(value)}</b><span>{esc(label)}</span></div>"
+        for value, label in [
+            (f"{coverage_summary['covered_categories']}/{coverage_summary['target_categories']}", "类别已有核心卡片"),
+            (f"{coverage_summary['category_coverage_percent']}%", "核心类别覆盖率"),
+            (f"{coverage_summary['covered_departments']}/{coverage_summary['target_departments']}", "部门已有核心卡片"),
+            (coverage_summary["priority_gaps"], "高/中优先级缺口"),
+        ]
+    )
+    coverage_category_rows = "\n".join(
+        f"""
+        <tr>
+          <td>{esc(row['name'])}</td>
+          <td>{row['card_count']}</td>
+          <td>{row['source_count']}</td>
+          <td><span class="coverage-status { 'covered' if row['status'] == '核心卡片' else ('partial' if row['status'] == '仅有资料' else 'missing') }">{esc(row['status'])}</span></td>
+        </tr>
+        """
+        for row in coverage["categories"]
+    )
+    coverage_department_rows = "\n".join(
+        f"""
+        <tr>
+          <td>{esc(row['name'])}</td>
+          <td>{row['card_count']}</td>
+          <td>{row['source_count']}</td>
+          <td><span class="coverage-status { 'covered' if row['status'] == '核心卡片' else ('partial' if row['status'] == '仅有资料' else 'missing') }">{esc(row['status'])}</span></td>
+        </tr>
+        """
+        for row in coverage["departments"]
+    )
+    priority_rows = "\n".join(
+        f"""
+        <tr>
+          <td><span class="priority priority-{esc(row['priority'])}">{esc(row['priority'])}</span></td>
+          <td>{esc(row['type'])}</td>
+          <td>{esc(row['name'])}</td>
+          <td>{esc(row['action'])}</td>
+        </tr>
+        """
+        for row in coverage["priorities"][:30]
+    ) or "<tr><td colspan=\"4\">当前没有待补充项</td></tr>"
+    feedback_summary_rows = "\n".join(
+        f"""
+        <tr>
+          <td>{esc(row['question'])}</td>
+          <td>{row['count']}</td>
+          <td>{esc(row['status'])}</td>
+          <td>{esc(row['top_document'])}</td>
+        </tr>
+        """
+        for row in coverage["feedback"]
+    ) or "<tr><td colspan=\"4\">暂无有效未回答问题</td></tr>"
+
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -462,9 +656,20 @@ def build_dashboard() -> str:
     .link-row {{ display: flex; flex-wrap: wrap; gap: 10px; }}
     .link-row a {{ border: 1px solid #bad7d2; border-radius: 6px; padding: 8px 10px; background: #fff; }}
     .error-card {{ border-color: #fecdca; background: #fff6f5; }}
+    .coverage-metrics {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }}
+    .coverage-metric {{ border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #fbfcfe; }}
+    .coverage-metric b {{ display: block; color: var(--brand); font-size: 25px; margin-bottom: 4px; }}
+    .coverage-metric span {{ color: var(--muted); font-size: 13px; }}
+    .coverage-status, .priority {{ display: inline-flex; padding: 3px 7px; border-radius: 4px; font-weight: 700; font-size: 12px; }}
+    .coverage-status.covered {{ background: #ecfdf3; color: #067647; }}
+    .coverage-status.partial {{ background: #fffaeb; color: #b54708; }}
+    .coverage-status.missing {{ background: #fff1f3; color: #c01048; }}
+    .priority-高 {{ background: #fff1f3; color: #c01048; }}
+    .priority-中 {{ background: #fffaeb; color: #b54708; }}
+    .priority-低 {{ background: #eef4ff; color: #3538cd; }}
     @media (max-width: 980px) {{
       main {{ padding: 14px; }}
-      .steps, .grid, .ragflow-grid {{ grid-template-columns: 1fr; }}
+      .steps, .grid, .ragflow-grid, .coverage-metrics {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -487,6 +692,42 @@ def build_dashboard() -> str:
       <div>
         <h2>清洗结果按事项类别分布</h2>
         {category_items}
+      </div>
+    </section>
+
+    <section>
+      <h2>学生事务覆盖报告</h2>
+      <p class="note">核心卡片表示助手可以稳定回答；仅有资料表示已经采集但还需要整理成服务卡片；未覆盖表示下一轮需要新增官方数据源。</p>
+      <div class="coverage-metrics">{coverage_metrics_html}</div>
+      <div class="grid">
+        <div>
+          <h2>按事项类别</h2>
+          <div class="scroll">
+            <table><thead><tr><th>类别</th><th>核心卡片</th><th>清洗资料</th><th>状态</th></tr></thead><tbody>{coverage_category_rows}</tbody></table>
+          </div>
+        </div>
+        <div>
+          <h2>按责任部门</h2>
+          <div class="scroll">
+            <table><thead><tr><th>部门</th><th>核心卡片</th><th>清洗资料</th><th>状态</th></tr></thead><tbody>{coverage_department_rows}</tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>下一轮数据补充清单</h2>
+      <p class="note">按缺口和学生未回答问题自动排序。高、中优先级应优先寻找官方来源；低优先级用于加深现有覆盖。</p>
+      <div class="scroll">
+        <table><thead><tr><th>优先级</th><th>类型</th><th>缺口</th><th>建议动作</th></tr></thead><tbody>{priority_rows}</tbody></table>
+      </div>
+    </section>
+
+    <section>
+      <h2>未回答问题归并</h2>
+      <p class="note">历史未命中问题会按文本合并；已经能被当前服务卡片关键词覆盖的问题标记为“可能已补充”。</p>
+      <div class="scroll">
+        <table><thead><tr><th>问题</th><th>出现次数</th><th>当前判断</th><th>历史最接近文档</th></tr></thead><tbody>{feedback_summary_rows}</tbody></table>
       </div>
     </section>
 
@@ -561,7 +802,9 @@ def build_dashboard() -> str:
 def main() -> None:
     OUTPUT_HTML.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_HTML.write_text(build_dashboard(), encoding="utf-8")
+    COVERAGE_JSON.write_text(json.dumps(build_coverage_report(), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Dashboard written to: {OUTPUT_HTML}")
+    print(f"Coverage report written to: {COVERAGE_JSON}")
 
 
 if __name__ == "__main__":

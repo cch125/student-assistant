@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.5.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
+当前版本：`v0.6.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签并推送到 GitHub，旧版本会完整保留。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -91,6 +91,12 @@ python visualize_pipeline.py
 
 ```text
 http://127.0.0.1:8090/pipeline
+```
+
+覆盖报告 JSON：
+
+```text
+http://127.0.0.1:8090/api/coverage
 ```
 
 ## RAGFlow
