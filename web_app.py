@@ -257,6 +257,41 @@ HTML = r"""<!doctype html>
       padding: 4px 8px;
       background: #fff;
     }
+    .result-count {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .related-results {
+      margin-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .related-results h3 {
+      margin: 16px 0 4px;
+      font-size: 16px;
+    }
+    .related-item {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .related-item:last-child { border-bottom: 0; }
+    .related-item h4 { margin: 0 0 6px; font-size: 16px; }
+    .related-item p { margin: 0 0 9px; color: var(--text); line-height: 1.65; }
+    .related-meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .related-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .related-actions a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--brand-dark);
+      font-size: 13px;
+      font-weight: 700;
+    }
     details {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -406,6 +441,34 @@ HTML = r"""<!doctype html>
           ${guide.materials ? `<span>${escapeHtml(guide.materials)}</span>` : ""}
         </div>
       ` : "";
+      const relatedMatches = (data.matches || []).filter(item =>
+        item.document_name &&
+        item.document_name !== data.document_name &&
+        Number(item.similarity || 0) >= Number(data.threshold || 0)
+      );
+      const relatedItems = relatedMatches.map(item => {
+        const itemDownloads = (item.downloads || []).map(download => `
+          <a href="${escapeHtml(download.url)}" target="_blank" rel="noreferrer">直接下载：${escapeHtml(download.name)}</a>
+        `).join("");
+        const itemSource = item.source_url
+          ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">查看官方说明</a>`
+          : "";
+        return `
+          <article class="related-item">
+            <h4>${escapeHtml((item.document_name || "相关结果").replace(/\.md$/i, ""))}</h4>
+            <div class="related-meta">相关度 ${Number(item.similarity || 0).toFixed(3)}</div>
+            <p>${escapeHtml(item.answer || item.snippet || "")}</p>
+            <div class="related-actions">${itemDownloads}${itemSource}</div>
+          </article>
+        `;
+      }).join("");
+      const relatedResults = data.ok && relatedItems ? `
+        <section class="related-results">
+          <h3>其他相关结果</h3>
+          ${relatedItems}
+        </section>
+      ` : "";
+      const visibleResultCount = data.ok ? 1 + relatedMatches.length : 0;
       const matches = (data.matches || []).map(item => `
         <div class="match">
           <strong>${escapeHtml(item.document_name || "未命名文档")} · 相似度 ${Number(item.similarity || 0).toFixed(3)}</strong>
@@ -442,11 +505,12 @@ HTML = r"""<!doctype html>
         </details>
       ` : "";
       answer.innerHTML = `
-        <h2>回答</h2>
+        <h2>回答${visibleResultCount > 1 ? `<span class="result-count">找到 ${visibleResultCount} 个相关结果</span>` : ""}</h2>
         <p class="answer-text ${data.ok ? "" : "error"}">${escapeHtml(data.answer)}</p>
         ${guardrail}
         ${actions}
         ${miniMeta}
+        ${relatedResults}
         ${guideCard}
         ${matchDetails}
       `;
