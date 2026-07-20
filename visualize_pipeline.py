@@ -935,7 +935,7 @@ def build_dashboard() -> str:
         <div class="dashboard-mark">暨</div>
         <div class="dashboard-title"><h1>数据流程看板</h1><p>暨南大学学生助手 · 版本 v{esc(project_version)} · 采集、清洗、解析与检索状态</p></div>
       </div>
-      <nav class="dashboard-nav" aria-label="主导航"><a href="/">学生助手</a><a class="active" href="/pipeline">数据看板</a></nav>
+      <nav class="dashboard-nav" aria-label="主导航"><a href="/">学生助手</a><a class="active" href="/pipeline">数据看板</a><a href="/settings">连接与导入</a></nav>
     </div>
   </header>
   <main>

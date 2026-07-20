@@ -159,8 +159,12 @@ def match_from_content(document_name: str, content: str, similarity: float) -> d
     }
 
 
-def grounded_notice_fallback(rag: RagflowClient, question: str) -> dict[str, Any] | None:
-    dataset_id = NOTICE_CONFIG.get("dataset_id")
+def grounded_notice_fallback(
+    rag: RagflowClient,
+    question: str,
+    dataset_id: str | None = None,
+) -> dict[str, Any] | None:
+    dataset_id = dataset_id or NOTICE_CONFIG.get("dataset_id")
     if not dataset_id:
         return None
     threshold = float(NOTICE_CONFIG.get("similarity_threshold", 0.7))
@@ -277,7 +281,12 @@ def local_keyword_fallback(question: str) -> dict[str, Any] | None:
     return match_from_content(best[2].name, best[3], similarity)
 
 
-def load_ragflow():
+def load_ragflow(connection: dict[str, str] | None = None):
+    if connection:
+        return RagflowClient(
+            f"{connection['base_url'].rstrip('/')}/api/v1",
+            api_key=connection["api_key"],
+        )
     return RagflowClient(f"{BASE_URL.rstrip('/')}/api/v1")
 
 
@@ -301,7 +310,7 @@ def log_unanswered(question: str, reason: str, matches: list[dict[str, Any]]) ->
         file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def ask_core_service(question: str) -> dict[str, Any]:
+def ask_core_service(question: str, connection: dict[str, str] | None = None) -> dict[str, Any]:
     question = question.strip()
     if not question:
         return {
@@ -321,10 +330,19 @@ def ask_core_service(question: str) -> dict[str, Any]:
         log_unanswered(question, guarded["reason"], [])
         return guarded
 
-    rag = load_ragflow()
-    dataset = next((item for item in rag.list_datasets() if item.get("name") == DATASET_NAME), None)
+    rag = load_ragflow(connection)
+    configured_dataset_id = (connection or {}).get("dataset_id")
+    dataset = next(
+        (
+            item
+            for item in rag.list_datasets()
+            if item.get("id") == configured_dataset_id
+            or (not configured_dataset_id and item.get("name") == DATASET_NAME)
+        ),
+        None,
+    )
     if not dataset:
-        raise RuntimeError(f"RAGFlow knowledge base not found: {DATASET_NAME}")
+        raise RuntimeError("RAGFlow knowledge base not found")
     retrieval = rag.request(
         "POST",
         "/retrieval",
@@ -352,7 +370,8 @@ def ask_core_service(question: str) -> dict[str, Any]:
         full_content = local_card_content(document_name, content)
         matches.append(match_from_content(document_name, full_content, float(chunk.get("similarity") or 0)))
 
-    keyword_match = local_keyword_fallback(question)
+    use_project_cards = not connection or dataset.get("name") == DATASET_NAME
+    keyword_match = local_keyword_fallback(question) if use_project_cards else None
     if keyword_match:
         for item in matches:
             if item["document_name"] == keyword_match["document_name"]:
@@ -363,9 +382,44 @@ def ask_core_service(question: str) -> dict[str, Any]:
 
     best = max(matches, key=lambda item: item["similarity"]) if matches else None
     if not best or not best["answer"]:
-        notice = grounded_notice_fallback(rag, question)
+        notice_dataset_id = (connection or {}).get("notice_dataset_id")
+        notice = (
+            grounded_notice_fallback(rag, question, notice_dataset_id)
+            if not connection or notice_dataset_id
+            else None
+        )
         if notice:
             return notice
+        if connection and chunks:
+            top = chunks[0]
+            content = " ".join(
+                str(top.get("content") or top.get("content_with_weight") or "").split()
+            )[:520]
+            if content:
+                document_name = str(
+                    top.get("document_keyword") or top.get("document_name") or "知识库材料"
+                )
+                similarity = float(top.get("similarity") or 0)
+                return {
+                    "ok": True,
+                    "answer": f"知识库找到相关原文：{content}",
+                    "source_url": "",
+                    "downloads": [],
+                    "document_name": document_name,
+                    "similarity": similarity,
+                    "matches": [{
+                        "document_name": document_name,
+                        "similarity": similarity,
+                        "answer": content,
+                        "source_url": "",
+                        "downloads": [],
+                        "guide": {},
+                        "snippet": content,
+                    }],
+                    "guide": {},
+                    "reason": "configured_dataset_excerpt",
+                    "threshold": MIN_ACCEPT_SIMILARITY,
+                }
         log_unanswered(question, "no_direct_answer", matches)
         return {
             "ok": False,
@@ -380,7 +434,12 @@ def ask_core_service(question: str) -> dict[str, Any]:
         }
 
     if best["similarity"] < MIN_ACCEPT_SIMILARITY:
-        notice = grounded_notice_fallback(rag, question)
+        notice_dataset_id = (connection or {}).get("notice_dataset_id")
+        notice = (
+            grounded_notice_fallback(rag, question, notice_dataset_id)
+            if not connection or notice_dataset_id
+            else None
+        )
         if notice:
             return notice
         log_unanswered(question, "low_similarity", matches)

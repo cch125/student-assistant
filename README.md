@@ -1,6 +1,16 @@
 # 暨南大学学生助手
 
-当前版本：`v0.13.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
+当前版本：`v0.14.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
+
+## v0 / Vercel Web 版本
+
+仓库根目录现已提供 Next.js 全栈 Web 应用，可从 v0 同步并部署到 Vercel：
+
+- `/`：学生助手，支持文字与照片输入。
+- `/pipeline`：GitHub 知识库快照与处理流程看板。
+- `/settings`：组员独立配置 RAGFlow、API Key、知识库、文件上传和项目数据导入。
+
+部署步骤、环境变量和公网 RAGFlow 要求见 [VERCEL.md](VERCEL.md)。Vercel 无法访问个人电脑的 `localhost:8080`，因此组员必须使用公网 HTTPS RAGFlow，或共用一套团队云端 RAGFlow。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 

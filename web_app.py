@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 from collections import defaultdict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,19 +28,24 @@ from core_services import ask_core_service
 boot_marker("Loading multimodal media library")
 from multimodal.media_library import attach_media, public_media_library, resolve_public_file
 from multimodal.query_image import analyze_query_image
+from web_ragflow import WebRagflowError, client_from_payload, parse_connection, snapshot_catalog
+from web_settings import SETTINGS_HTML
 boot_marker("Loading pipeline dashboard")
 from visualize_pipeline import build_coverage_report, build_dashboard
 boot_marker("Imports ready")
 
 
 HOST = os.getenv("ASSISTANT_HOST", "127.0.0.1")
-PORT = int(os.getenv("ASSISTANT_PORT", "8090"))
-MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", str(9 * 1024 * 1024)))
+PORT = int(os.getenv("PORT", os.getenv("ASSISTANT_PORT", "8090")))
+REQUIRE_BROWSER_CONNECTION = os.getenv("REQUIRE_BROWSER_CONNECTION", "0").lower() in {"1", "true", "yes"}
+MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", str(30 * 1024 * 1024)))
 MAX_QUESTION_LENGTH = int(os.getenv("MAX_QUESTION_LENGTH", "300"))
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "30"))
 RATE_LIMIT_WINDOW = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 REQUEST_HISTORY: dict[str, deque[float]] = defaultdict(deque)
 REQUEST_LOCK = threading.Lock()
+IMPORT_JOBS: dict[str, dict] = {}
+IMPORT_LOCK = threading.Lock()
 STARTUP_LOG = BOOT_LOG
 
 
@@ -49,6 +55,32 @@ def log(message: str) -> None:
         file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
     if os.getenv("ASSISTANT_CONSOLE_LOG") == "1" and sys.stdout is not None:
         print(message)
+
+
+def run_snapshot_import(job_id: str, connection: dict[str, str], snapshot_dataset_id: str) -> None:
+    def progress(uploaded: int, skipped: int, total: int) -> None:
+        with IMPORT_LOCK:
+            IMPORT_JOBS[job_id].update(
+                {"status": "running", "uploaded": uploaded, "skipped": skipped, "total": total}
+            )
+
+    try:
+        from web_ragflow import WebRagflowClient
+
+        client = WebRagflowClient(connection["base_url"], connection["api_key"])
+        result = client.import_snapshot(
+            connection["dataset_id"], snapshot_dataset_id, progress=progress
+        )
+        with IMPORT_LOCK:
+            IMPORT_JOBS[job_id].update({"status": "complete", **result})
+    except Exception as exc:
+        log(f"snapshot import failed: {type(exc).__name__}")
+        with IMPORT_LOCK:
+            IMPORT_JOBS[job_id].update(
+                {"status": "failed", "message": str(exc)[:240] or "项目数据导入失败。"}
+            )
+    finally:
+        connection.clear()
 
 HTML = r"""<!doctype html>
 <html lang="zh-CN">
@@ -543,8 +575,8 @@ HTML = r"""<!doctype html>
         <div class="brand-copy"><h1>暨南大学学生助手</h1><small>学生事务与官方材料检索</small></div>
       </div>
       <div class="top-actions">
-        <nav class="nav" aria-label="主导航"><a class="active" href="/">学生助手</a><a href="/pipeline">数据看板</a></nav>
-        <div class="status">知识库在线</div>
+        <nav class="nav" aria-label="主导航"><a class="active" href="/">学生助手</a><a href="/pipeline">数据看板</a><a href="/settings">连接与导入</a></nav>
+        <div class="status" id="kb-status">知识库连接</div>
       </div>
     </div>
   </header>
@@ -590,6 +622,15 @@ HTML = r"""<!doctype html>
     const photoPreview = document.querySelector("#photoPreview");
     const photoRemove = document.querySelector("#photoRemove");
     let selectedImage = null;
+    function browserConnection() {
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem("jnu-ragflow-connection") || "{}"); } catch {}
+      const apiKey = sessionStorage.getItem("jnu-ragflow-api-key") || localStorage.getItem("jnu-ragflow-api-key") || "";
+      return saved.base_url && apiKey ? { ...saved, api_key: apiKey } : null;
+    }
+    const activeConnection = browserConnection();
+    const kbStatus = document.querySelector("#kb-status");
+    if (kbStatus) kbStatus.textContent = activeConnection ? "个人知识库已配置" : "请先配置知识库";
 
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, char => ({
@@ -733,7 +774,8 @@ HTML = r"""<!doctype html>
           body: JSON.stringify({
             question,
             image_base64: selectedImage ? selectedImage.base64 : "",
-            image_mime: selectedImage ? selectedImage.mime : ""
+            image_mime: selectedImage ? selectedImage.mime : "",
+            connection: browserConnection()
           })
         });
         const data = await response.json();
@@ -825,6 +867,9 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
         if path == "/api/media-index":
             self.send_json(public_media_library())
             return
+        if path == "/api/ragflow/snapshots":
+            self.send_json({"ok": True, "snapshots": snapshot_catalog()})
+            return
         if path.startswith(("/media/", "/multimodal-source/")):
             resolved = resolve_public_file(path)
             if not resolved:
@@ -850,6 +895,15 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        if path == "/settings":
+            body = SETTINGS_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path not in {"/", "/index.html"}:
             self.send_error(404)
             return
@@ -862,7 +916,14 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path != "/api/ask":
+        if path not in {
+            "/api/ask",
+            "/api/ragflow/connect",
+            "/api/ragflow/documents",
+            "/api/ragflow/upload",
+            "/api/ragflow/import-snapshot",
+            "/api/ragflow/import-status",
+        }:
             self.send_error(404)
             return
 
@@ -877,6 +938,75 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
         raw_body = self.rfile.read(length)
         try:
             payload = json.loads(raw_body.decode("utf-8"))
+            if path.startswith("/api/ragflow/"):
+                if path == "/api/ragflow/import-status":
+                    job_id = str(payload.get("job_id") or "")
+                    with IMPORT_LOCK:
+                        job = dict(IMPORT_JOBS.get(job_id) or {})
+                    if not job:
+                        raise WebRagflowError("未找到导入任务。")
+                    self.send_json({"ok": True, "job": job})
+                    return
+                client, connection = client_from_payload(payload)
+                if path == "/api/ragflow/connect":
+                    datasets = [
+                        {
+                            "id": str(item.get("id") or ""),
+                            "name": str(item.get("name") or "未命名知识库"),
+                            "document_count": int(item.get("document_count") or 0),
+                            "chunk_count": int(item.get("chunk_count") or 0),
+                        }
+                        for item in client.list_datasets()
+                    ]
+                    self.send_json({"ok": True, "datasets": datasets})
+                    return
+                if path == "/api/ragflow/documents":
+                    data = client.list_documents(connection["dataset_id"])
+                    documents = data.get("docs", []) if isinstance(data, dict) else []
+                    self.send_json({"ok": True, "documents": documents, "total": len(documents)})
+                    return
+                if path == "/api/ragflow/import-snapshot":
+                    if not connection["dataset_id"]:
+                        raise WebRagflowError("请先选择导入目标知识库。")
+                    snapshot_dataset_id = str(payload.get("snapshot_dataset_id") or "")
+                    if snapshot_dataset_id not in {item["id"] for item in snapshot_catalog()}:
+                        raise WebRagflowError("请选择有效的项目知识库快照。")
+                    job_id = uuid.uuid4().hex
+                    with IMPORT_LOCK:
+                        IMPORT_JOBS[job_id] = {
+                            "status": "queued",
+                            "uploaded": 0,
+                            "skipped": 0,
+                            "total": next(
+                                item["documents"]
+                                for item in snapshot_catalog()
+                                if item["id"] == snapshot_dataset_id
+                            ),
+                        }
+                    threading.Thread(
+                        target=run_snapshot_import,
+                        args=(job_id, dict(connection), snapshot_dataset_id),
+                        daemon=True,
+                    ).start()
+                    self.send_json({"ok": True, "job_id": job_id})
+                    return
+                uploaded = client.upload_and_parse(connection["dataset_id"], payload.get("files") or [])
+                self.send_json(
+                    {
+                        "ok": True,
+                        "uploaded": [
+                            {"id": str(item.get("id") or ""), "name": str(item.get("name") or "")}
+                            for item in uploaded
+                        ],
+                    }
+                )
+                return
+            if REQUIRE_BROWSER_CONNECTION and not payload.get("connection"):
+                self.send_json(
+                    {"ok": False, "answer": "请先打开“连接与导入”配置 RAGFlow。"},
+                    status=400,
+                )
+                return
             question = str(payload.get("question", "")).strip()
             image_base64 = str(payload.get("image_base64", "")).strip()
             image_mime = str(payload.get("image_mime", "")).strip().lower()
@@ -894,7 +1024,8 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
                     image_analysis.get("visible_text", ""),
                 ]
                 retrieval_question = "\n".join(part for part in retrieval_parts if part).strip()
-            result = attach_media(ask_core_service(retrieval_question), retrieval_question)
+            connection = parse_connection(payload) if payload.get("connection") else None
+            result = attach_media(ask_core_service(retrieval_question, connection), retrieval_question)
             if image_analysis:
                 result["query_mode"] = "image"
                 result["image_analysis"] = {
@@ -902,6 +1033,9 @@ class StudentAssistantHandler(BaseHTTPRequestHandler):
                     "intent": image_analysis.get("intent", ""),
                     "warning": image_analysis.get("warning", ""),
                 }
+        except WebRagflowError as exc:
+            self.send_json({"ok": False, "message": str(exc), "answer": str(exc)}, status=400)
+            return
         except ValueError as exc:
             message = str(exc)
             if not message.startswith(("仅支持", "图片", "无法读取")):
