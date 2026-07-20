@@ -10,6 +10,19 @@ export const maxDuration = 60;
 type Connection = { baseUrl?: string; apiKey?: string; datasetId?: string; noticeDatasetId?: string };
 type Body = { action?: string; connection?: Connection; [key: string]: unknown };
 
+function managedConnection(): Connection | undefined {
+  const baseUrl = String(process.env.RAGFLOW_BASE_URL || "").trim();
+  const apiKey = String(process.env.RAGFLOW_API_KEY || "").trim();
+  const datasetId = String(process.env.RAGFLOW_DATASET_ID || "").trim();
+  if (!baseUrl || !apiKey || !datasetId) return undefined;
+  return {
+    baseUrl,
+    apiKey,
+    datasetId,
+    noticeDatasetId: String(process.env.RAGFLOW_NOTICE_DATASET_ID || "").trim()
+  };
+}
+
 function isPrivate(address: string): boolean {
   if (address === "::1" || address.startsWith("fe80:") || address.startsWith("fc") || address.startsWith("fd")) return true;
   const parts = address.split(".").map(Number);
@@ -18,17 +31,19 @@ function isPrivate(address: string): boolean {
 }
 
 async function validatedConnection(value: Connection | undefined) {
-  const apiKey = String(value?.apiKey || "").trim();
-  const datasetId = String(value?.datasetId || "").trim();
+  const managed = managedConnection();
+  const selected = managed || value;
+  const apiKey = String(selected?.apiKey || "").trim();
+  const datasetId = String(selected?.datasetId || "").trim();
   if (!apiKey || apiKey.length > 2048) throw new Error("请输入有效的 RAGFlow API Key。");
   let url: URL;
-  try { url = new URL(String(value?.baseUrl || "").trim()); } catch { throw new Error("请输入有效的 RAGFlow 地址。"); }
+  try { url = new URL(String(selected?.baseUrl || "").trim()); } catch { throw new Error("请输入有效的 RAGFlow 地址。"); }
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error("远程 RAGFlow 必须使用不含账号参数的 HTTPS 地址。");
   if (!["", "/", "/api/v1", "/api/v1/"].includes(url.pathname)) throw new Error("RAGFlow 地址只填写站点根地址。");
   if (["localhost", "127.0.0.1", "::1"].includes(url.hostname)) throw new Error("Vercel 无法访问你电脑的 localhost，请填写公网 HTTPS 地址。");
   const addresses = isIP(url.hostname) ? [{ address: url.hostname }] : await dns.lookup(url.hostname, { all: true });
   if (addresses.some(item => isPrivate(item.address))) throw new Error("出于安全原因，不能连接内网地址。");
-  return { root: `${url.origin}/api/v1`, apiKey, datasetId, noticeDatasetId: String(value?.noticeDatasetId || "") };
+  return { root: `${url.origin}/api/v1`, apiKey, datasetId, noticeDatasetId: String(selected?.noticeDatasetId || ""), managed: Boolean(managed) };
 }
 
 async function ragRequest(connection: Awaited<ReturnType<typeof validatedConnection>>, endpoint: string, init: RequestInit = {}) {
@@ -92,10 +107,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as Body;
     if (body.action === "catalog") return NextResponse.json({ ok: true, snapshots: await snapshotCatalog() });
+    if (body.action === "configuration") return NextResponse.json({ ok: true, managed: Boolean(managedConnection()) });
     const connection = await validatedConnection(body.connection);
-    if (body.action === "connect") {
+    if (body.action === "connect" || body.action === "overview") {
       const datasets = await ragRequest(connection, "/datasets?page=1&page_size=100");
-      return NextResponse.json({ ok: true, datasets: (datasets || []).map((item: Record<string, unknown>) => ({ id: item.id, name: item.name, documentCount: item.document_count || 0, chunkCount: item.chunk_count || 0 })) });
+      return NextResponse.json({ ok: true, managed: connection.managed, datasets: (datasets || []).map((item: Record<string, unknown>) => ({ id: item.id, name: item.name, documentCount: item.document_count || 0, chunkCount: item.chunk_count || 0 })) });
     }
     if (!connection.datasetId) throw new Error("请先选择知识库。");
     if (body.action === "documents") {
@@ -103,6 +119,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, documents: documents.slice(0, 100), total: documents.length });
     }
     if (body.action === "upload") {
+      if (connection.managed) throw new Error("托管模式不开放网页上传，请由管理员在本机 RAGFlow 中维护数据。");
       const files = Array.isArray(body.files) ? body.files as { name?: string; base64?: string; type?: string }[] : [];
       if (!files.length || files.length > 3) throw new Error("每次请选择 1 至 3 个文件。");
       const form = new FormData(); let totalBytes = 0;
@@ -118,6 +135,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, uploaded: uploaded || [] });
     }
     if (body.action === "snapshotBatch") {
+      if (connection.managed) throw new Error("托管模式不开放网页导入，请由管理员运行本地恢复脚本。");
       const snapshotId = String(body.snapshotId || ""); const offset = Math.max(0, Number(body.offset || 0)); const rows = await snapshotRows(snapshotId); const batch = rows.slice(offset, offset + 5);
       const existing = new Set((await listDocuments(connection, connection.datasetId)).map(item => String(item.name || "")));
       const selected = batch.filter(item => !existing.has(String(item.name || ""))); const form = new FormData();

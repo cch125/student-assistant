@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.15.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
+当前版本：`v0.16.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
 
 ## v0 / Vercel Web 版本
 

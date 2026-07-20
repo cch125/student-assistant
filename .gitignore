@@ -18,3 +18,5 @@ data/feedback/
 outputs/
 tmp/
 !.gitkeep
+
+.vercel/
