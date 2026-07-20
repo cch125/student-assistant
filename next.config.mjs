@@ -1,12 +1,21 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: false,
+  turbopack: { root: process.cwd() },
+  async headers() {
+    return [{
+      source: "/(.*)",
+      headers: [
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "X-Frame-Options", value: "DENY" },
+        { key: "Referrer-Policy", value: "no-referrer" },
+        { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }
+      ]
+    }];
   },
-  // 让 Serverless 打包时包含仓库中的知识库快照，供导入接口在运行时读取。
   outputFileTracingIncludes: {
-    "/api/snapshot/**": ["./knowledge_base/**"],
-  },
-}
+    "/api/ragflow": ["./knowledge_base/**/*"]
+  }
+};
 
-export default nextConfig
+export default nextConfig;

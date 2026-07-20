@@ -1,27 +1,25 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { ConnectionForm } from "@/components/connection-form"
-import { ImportPanel } from "@/components/import-panel"
+import { DatabaseZap, RefreshCw, Trash2, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { clearConnection, Connection, isRemembered, loadConnection, saveConnection } from "@/lib/connection";
 
-type DatasetOption = { id: string; name: string; documentCount?: number }
+type Dataset={id:string;name:string;documentCount:number;chunkCount:number}; type Snapshot={id:string;name:string;documents:number}; type Doc={id?:string;name?:string;run?:string|number;status?:string|number};
 
-export default function SettingsPage() {
-  const [datasets, setDatasets] = useState<DatasetOption[]>([])
+async function api(body:Record<string,unknown>){const response=await fetch("/api/ragflow",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||data.ok===false)throw new Error(data.message||"请求失败");return data;}
 
-  return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-balance text-xl font-semibold tracking-tight sm:text-2xl">
-          连接与导入
-        </h1>
-        <p className="mt-2 text-pretty text-sm leading-relaxed text-muted-foreground">
-          配置各自的 RAGFlow 连接、选择问答与通知知识库，并把仓库中的知识库快照导入 RAGFlow。
-        </p>
-      </header>
-
-      <ConnectionForm onDatasetsLoaded={(list) => setDatasets(list)} />
-      <ImportPanel targets={datasets} />
-    </div>
-  )
+export default function SettingsPage(){
+  const [connection,setConnection]=useState<Connection>({baseUrl:"",apiKey:"",datasetId:"",noticeDatasetId:""}); const [remember,setRemember]=useState(false); const [datasets,setDatasets]=useState<Dataset[]>([]); const [snapshots,setSnapshots]=useState<Snapshot[]>([]); const [snapshotId,setSnapshotId]=useState(""); const [docs,setDocs]=useState<Doc[]>([]); const [status,setStatus]=useState("尚未验证连接。"); const [kind,setKind]=useState(""); const [busy,setBusy]=useState(false);
+  useEffect(()=>{setConnection(loadConnection());setRemember(isRemembered());api({action:"catalog"}).then(data=>{setSnapshots(data.snapshots||[]);const core=(data.snapshots||[]).find((item:Snapshot)=>item.name.includes("核心服务卡片"));setSnapshotId(core?.id||data.snapshots?.[0]?.id||"");}).catch(()=>{});},[]);
+  function persist(value=connection){saveConnection(value,remember);}
+  async function connect(){setBusy(true);setStatus("正在连接 RAGFlow...");setKind("");try{persist();const data=await api({action:"connect",connection});setDatasets(data.datasets||[]);setStatus(`连接成功，共读取到 ${data.datasets.length} 个知识库。`);setKind("ok");}catch(error){setStatus(error instanceof Error?error.message:"连接失败");setKind("error");}finally{setBusy(false);}}
+  async function documents(){if(!connection.datasetId)return setStatus("请先选择知识库。");setBusy(true);try{persist();const data=await api({action:"documents",connection});setDocs(data.documents||[]);setStatus(`已读取 ${data.total} 份文档，显示最近 100 份。`);setKind("ok");}catch(error){setStatus(error instanceof Error?error.message:"读取失败");setKind("error");}finally{setBusy(false);}}
+  async function upload(files:FileList|null){if(!files?.length)return;if(files.length>3||[...files].reduce((sum,file)=>sum+file.size,0)>3*1024*1024){setStatus("每次最多 3 个文件，总大小不能超过 3 MB。");setKind("error");return;}setBusy(true);setStatus("正在上传并触发解析...");try{const encoded=await Promise.all([...files].map(file=>new Promise<{name:string;type:string;base64:string}>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,type:file.type,base64:String(reader.result).split(",",2)[1]||""});reader.onerror=reject;reader.readAsDataURL(file);})));await api({action:"upload",connection,files:encoded});setStatus(`已上传 ${encoded.length} 个文件，RAGFlow 正在解析。`);setKind("ok");await documents();}catch(error){setStatus(error instanceof Error?error.message:"上传失败");setKind("error");}finally{setBusy(false);}}
+  async function importSnapshot(){if(!snapshotId||!connection.datasetId)return setStatus("请先选择目标知识库和项目快照。");setBusy(true);let offset=0,uploaded=0,skipped=0,total=0;try{do{const data=await api({action:"snapshotBatch",connection,snapshotId,offset});offset=data.nextOffset;uploaded+=data.uploaded;skipped+=data.skipped;total=data.total;setStatus(`导入中：已处理 ${offset}/${total}，新增 ${uploaded}，跳过 ${skipped}。`);if(data.done)break;}while(true);setStatus(`导入完成：新增 ${uploaded} 份，跳过同名 ${skipped} 份。`);setKind("ok");await documents();}catch(error){setStatus(error instanceof Error?error.message:"导入失败");setKind("error");}finally{setBusy(false);}}
+  return <main className="page"><div className="page-grid"><section className="panel"><h1>连接与导入</h1><p className="lede">每位组员配置自己的 RAGFlow。API Key 由浏览器随请求提交，服务器不保存。</p>
+    <div className="field-grid"><div className="field full"><label>RAGFlow HTTPS 地址</label><input type="url" value={connection.baseUrl} placeholder="https://ragflow.example.com" onChange={e=>setConnection({...connection,baseUrl:e.target.value})}/></div><div className="field full"><label>API Key</label><input type="password" autoComplete="off" value={connection.apiKey} placeholder="输入 RAGFlow API Key" onChange={e=>setConnection({...connection,apiKey:e.target.value})}/></div><div className="field"><label>问答知识库</label><select value={connection.datasetId} onChange={e=>{const value={...connection,datasetId:e.target.value};setConnection(value);saveConnection(value,remember);}}><option value="">连接后选择</option>{datasets.map(item=><option key={item.id} value={item.id}>{item.name} · {item.documentCount} 份</option>)}</select></div><div className="field"><label>通知补充知识库（可选）</label><select value={connection.noticeDatasetId} onChange={e=>setConnection({...connection,noticeDatasetId:e.target.value})}><option value="">不使用</option>{datasets.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></div></div>
+    <div className="actions"><button className="button" disabled={busy} onClick={connect}><DatabaseZap size={17}/>验证并读取知识库</button><button className="button secondary" onClick={()=>{clearConnection();location.reload();}}><Trash2 size={17}/>清除</button></div><label className="check"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>在这台浏览器记住 API Key（共用电脑不要勾选）</label><div className={`status-box ${kind}`}>{status}</div>
+    <h3>导入项目知识库</h3><p className="muted">把 GitHub 中已清洗归档的数据分批导入所选知识库，同名文件自动跳过。</p><div className="field"><label>项目数据快照</label><select value={snapshotId} onChange={e=>setSnapshotId(e.target.value)}>{snapshots.map(item=><option key={item.id} value={item.id}>{item.name} · {item.documents} 份</option>)}</select></div><div className="actions"><button className="button" disabled={busy} onClick={importSnapshot}><Upload size={17}/>开始导入</button></div>
+    <h3>上传自己的文件</h3><div className="upload-box"><input type="file" multiple accept=".pdf,.docx,.xlsx,.pptx,.md,.txt,.html,.csv,.json,.png,.jpg,.jpeg,.webp" disabled={busy} onChange={e=>upload(e.target.files)}/></div><div className="actions"><button className="button secondary" disabled={busy} onClick={documents}><RefreshCw size={17}/>刷新文档状态</button></div><div className="document-list">{docs.slice(0,30).map((item,index)=><div className="document-row" key={item.id||index}><span>{item.name||"未命名文件"}</span><span>{item.run==="DONE"||item.run===3?"解析完成":String(item.run||item.status||"等待处理")}</span></div>)}</div>
+  </section><aside className="panel"><h2>部署条件</h2><ol className="steps"><li>RAGFlow 必须有公网 HTTPS 地址。</li><li>先在 RAGFlow 配置 LLM 与 Embedding。</li><li>创建目标知识库，再在此选择。</li><li>等待文档解析完成后开始提问。</li></ol><h3>安全提示</h3><div className="privacy">Vercel 无法访问组员电脑的 localhost。团队共用一套云端 RAGFlow 最方便，也可使用各自的公网实例。</div></aside></div></main>;
 }

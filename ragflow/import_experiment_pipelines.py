@@ -25,10 +25,10 @@ CORPUS_DIRS = (
 
 
 class RagflowClient:
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, api_key: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
-        self.session.headers.update({"Authorization": f"Bearer {get_api_key()}"})
+        self.session.headers.update({"Authorization": f"Bearer {api_key or get_api_key()}"})
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         response = self.session.request(method, f"{self.base_url}{path}", timeout=120, **kwargs)

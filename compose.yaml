@@ -6,6 +6,8 @@ services:
         required: false
     ports:
       - "8090:8090"
+    environment:
+      ALLOW_PRIVATE_RAGFLOW: "1"
     volumes:
       - ./data:/app/data:ro
       - ./outputs:/app/outputs
