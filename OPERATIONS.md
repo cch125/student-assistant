@@ -75,3 +75,11 @@ python visualize_pipeline.py
 ## 备份
 
 发布前备份 `data/cleaned`、RAGFlow 数据卷和 `config`。Git 标签保存代码与配置历史，但不会保存被 `.gitignore` 排除的原始数据、附件、密钥和运行报告。
+
+导出可提交 GitHub 的知识库内容快照：
+
+```powershell
+python ragflow\export_knowledge_bases.py --workers 8
+```
+
+导出结果位于 `knowledge_base/`，包含文档、分块、图片、公开配置和校验和，但主动排除账号、凭据、反馈与聊天数据。发布前检查 `knowledge_base/manifest.json` 中所有知识库的 `errors` 均为空。

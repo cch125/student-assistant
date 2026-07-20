@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.12.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
+当前版本：`v0.13.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
 
 这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
 
@@ -18,7 +18,22 @@
 - [GitHub Releases](https://github.com/cch125/student-assistant/releases)：按版本查看说明并下载 Source code ZIP/TAR.GZ。
 - [GitHub Tags](https://github.com/cch125/student-assistant/tags)：查看全部历史标签和对应源码。
 
-仓库只保存代码、配置和可复现说明。官网原始数据、MinerU 生成物、RAGFlow 数据和本机密钥不会包含在源码压缩包中。
+仓库保存代码、配置、可复现说明和经过安全过滤的 RAGFlow 知识库快照。官网爬取缓存、反馈日志、完整 RAGFlow 数据卷和本机密钥不会包含在源码压缩包中。
+
+## 知识库快照
+
+GitHub 仓库中的 [`knowledge_base`](knowledge_base) 目录保存当前 RAGFlow 全部 5 个知识库的可审阅快照：
+
+- 692 份知识库文档及 238 个去重文件原件。
+- 1,138 个完整文本分块。
+- 78 个带 `image_id` 的图片块及 25 个去重原生图片。
+- 数据集配置、文档元数据、关键词、问题、位置和 SHA-256 校验和。
+
+快照不包含账号、密钥、反馈日志或聊天记录。重新连接本机 RAGFlow 后刷新快照：
+
+```powershell
+python ragflow\export_knowledge_bases.py --workers 8
+```
 
 ## 当前状态
 
@@ -48,6 +63,7 @@ cleaner/       数据清洗和服务卡片生成
 multimodal/    MinerU 多模态附件清洗
 crawler/       暨南大学公开网页采集
 ragflow/       RAGFlow 导入、检索和测试脚本
+knowledge_base/  可下载、可审阅的 RAGFlow 知识库快照
 scripts/       辅助脚本
 config/        采集配置
 web_app.py     本地问答页面
