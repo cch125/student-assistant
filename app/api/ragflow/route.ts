@@ -74,6 +74,41 @@ function field(content: string, name: string): string {
   return content.match(new RegExp(`(?:^|\\n)${name}：(.+?)(?:\\n\\n|$)`, "s"))?.[1]?.replace(/\s+/g, " ").trim() || "";
 }
 
+function downloads(content: string) {
+  const block = content.match(/(?:^|\n)下载文件：\s*\n([\s\S]+?)(?:\n\n\S+：|\s*$)/)?.[1] || "";
+  return block.split(/\r?\n/).map(line => line.replace(/^-\s*/, "").trim()).map(line => {
+    const [name, url] = line.split("|", 2).map(value => value?.trim());
+    return name && /^https?:\/\//.test(url || "") ? { name, url: url! } : undefined;
+  }).filter((item): item is { name: string; url: string } => Boolean(item));
+}
+
+async function localCardMatch(question: string) {
+  const directory = path.join(process.cwd(), "data", "cleaned", "service_cards");
+  const questionText = question.toLowerCase();
+  let best: { score: number; exact: boolean; name: string; content: string } | undefined;
+  for (const name of await fs.readdir(directory)) {
+    if (!name.endsWith(".md")) continue;
+    const content = await fs.readFile(path.join(directory, name), "utf8");
+    const title = name.replace(/\.md$/i, "").toLowerCase();
+    const keywords = field(content, "关键词").replace(/，/g, ",").split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+    const exact = Boolean(title && questionText.includes(title));
+    let score = exact ? 3 : 0;
+    for (const keyword of keywords) {
+      if (keyword.length >= 2 && questionText.includes(keyword)) score += keyword.length >= 4 ? 2 : 1;
+    }
+    if (score >= 2 && (!best || score > best.score)) best = { score, exact, name, content };
+  }
+  if (!best) return undefined;
+  return {
+    documentName: best.name,
+    similarity: best.exact ? 0.99 : Math.min(0.9, 0.25 + best.score * 0.1),
+    answer: field(best.content, "直接回答"),
+    sourceUrl: sourceUrl(best.content),
+    downloads: downloads(best.content),
+    snippet: best.content.replace(/^#+\s*/gm, "").replace(/\s+/g, " ").slice(0, 260)
+  };
+}
+
 function sourceUrl(content: string): string {
   const value = field(content, "来源链接") || content.match(/https?:\/\/[^\s)）]+/)?.[0] || "";
   try { const url = new URL(value); return /(^|\.)jnu\.edu\.cn$/i.test(url.hostname) ? url.toString() : ""; } catch { return ""; }
@@ -150,9 +185,23 @@ export async function POST(request: NextRequest) {
       if (imageBase64.length > 3 * 1024 * 1024) throw new Error("照片数据过大，请压缩后重试。");
       if (imageBase64) question = `${question}\n${await analyzeImage(imageBase64, String(body.imageMime || "image/jpeg"), question)}`.trim();
       if (!question || question.length > 1200) throw new Error("请输入有效问题。");
-      const data = await ragRequest(connection, "/retrieval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset_ids: [connection.datasetId], question, page_size: 3, top_k: 20, similarity_threshold: 0.24, vector_similarity_weight: 0.1, keyword: false, highlight: false }) });
+      const localMatch = connection.managed ? await localCardMatch(question) : undefined;
+      if (localMatch?.answer) {
+        return NextResponse.json({ ok: true, ...localMatch, matches: [{ documentName: localMatch.documentName, similarity: localMatch.similarity, snippet: localMatch.snippet }] });
+      }
+      const data = await ragRequest(connection, "/retrieval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        dataset_ids: [connection.datasetId],
+        question,
+        page_size: 3,
+        top_k: 20,
+        similarity_threshold: 0.2,
+        vector_similarity_weight: 0.9,
+        rerank_id: process.env.RAGFLOW_RERANK_ID || "BAAI/bge-reranker-v2-m3@default1@OpenAI-API-Compatible",
+        keyword: false,
+        highlight: false
+      }) });
       const chunks = Array.isArray(data?.chunks) ? data.chunks : []; const top = chunks[0];
-      if (!top || Number(top.similarity || 0) < 0.24) return NextResponse.json({ ok: false, answer: "当前知识库未收录明确材料。为避免误导，我不会猜测答案。", similarity: Number(top?.similarity || 0), matches: [] });
+      if (!top || Number(top.similarity || 0) < 0.2) return NextResponse.json({ ok: false, answer: "当前知识库未收录明确材料。为避免误导，我不会猜测答案。", similarity: Number(top?.similarity || 0), matches: [] });
       const content = String(top.content || top.content_with_weight || ""); const direct = field(content, "直接回答"); const excerpt = content.replace(/^#+\s*/gm, "").replace(/\s+/g, " ").slice(0, 520);
       return NextResponse.json({ ok: true, answer: direct || `知识库相关原文：${excerpt}`, documentName: top.document_keyword || top.document_name || "知识库材料", similarity: Number(top.similarity || 0), sourceUrl: sourceUrl(content), matches: chunks.slice(0, 3).map((item: Record<string, unknown>) => ({ documentName: item.document_keyword || item.document_name || "知识库材料", similarity: Number(item.similarity || 0), snippet: String(item.content || item.content_with_weight || "").replace(/\s+/g, " ").slice(0, 260) })) });
     }
