@@ -86,7 +86,9 @@ async function localCardMatch(question: string) {
   const directory = path.join(process.cwd(), "data", "cleaned", "service_cards");
   const questionText = question.toLowerCase();
   let best: { score: number; exact: boolean; name: string; content: string } | undefined;
-  for (const name of await fs.readdir(directory)) {
+  let names: string[];
+  try { names = await fs.readdir(directory); } catch { return undefined; }
+  for (const name of names) {
     if (!name.endsWith(".md")) continue;
     const content = await fs.readFile(path.join(directory, name), "utf8");
     const title = name.replace(/\.md$/i, "").toLowerCase();

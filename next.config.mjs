@@ -14,7 +14,7 @@ const nextConfig = {
     }];
   },
   outputFileTracingIncludes: {
-    "/api/ragflow": ["./knowledge_base/**/*"]
+    "/api/ragflow": ["./knowledge_base/**/*", "./data/cleaned/service_cards/**/*.md"]
   }
 };
 
