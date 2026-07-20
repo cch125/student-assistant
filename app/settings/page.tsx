@@ -1,6 +1,6 @@
 "use client";
 
-import { DatabaseZap, RefreshCw, Trash2, Upload } from "lucide-react";
+import { DatabaseZap, Download, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { clearConnection, Connection, isRemembered, loadConnection, saveConnection } from "@/lib/connection";
 
@@ -21,5 +21,5 @@ export default function SettingsPage(){
     <div className="actions"><button className="button" disabled={busy} onClick={connect}><DatabaseZap size={17}/>验证并读取知识库</button><button className="button secondary" onClick={()=>{clearConnection();location.reload();}}><Trash2 size={17}/>清除</button></div><label className="check"><input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>在这台浏览器记住 API Key（共用电脑不要勾选）</label><div className={`status-box ${kind}`}>{status}</div>
     <h3>导入项目知识库</h3><p className="muted">把 GitHub 中已清洗归档的数据分批导入所选知识库，同名文件自动跳过。</p><div className="field"><label>项目数据快照</label><select value={snapshotId} onChange={e=>setSnapshotId(e.target.value)}>{snapshots.map(item=><option key={item.id} value={item.id}>{item.name} · {item.documents} 份</option>)}</select></div><div className="actions"><button className="button" disabled={busy} onClick={importSnapshot}><Upload size={17}/>开始导入</button></div>
     <h3>上传自己的文件</h3><div className="upload-box"><input type="file" multiple accept=".pdf,.docx,.xlsx,.pptx,.md,.txt,.html,.csv,.json,.png,.jpg,.jpeg,.webp" disabled={busy} onChange={e=>upload(e.target.files)}/></div><div className="actions"><button className="button secondary" disabled={busy} onClick={documents}><RefreshCw size={17}/>刷新文档状态</button></div><div className="document-list">{docs.slice(0,30).map((item,index)=><div className="document-row" key={item.id||index}><span>{item.name||"未命名文件"}</span><span>{item.run==="DONE"||item.run===3?"解析完成":String(item.run||item.status||"等待处理")}</span></div>)}</div>
-  </section><aside className="panel"><h2>部署条件</h2><ol className="steps"><li>RAGFlow 必须有公网 HTTPS 地址。</li><li>先在 RAGFlow 配置 LLM 与 Embedding。</li><li>创建目标知识库，再在此选择。</li><li>等待文档解析完成后开始提问。</li></ol><h3>安全提示</h3><div className="privacy">Vercel 无法访问组员电脑的 localhost。团队共用一套云端 RAGFlow 最方便，也可使用各自的公网实例。</div></aside></div></main>;
+  </section><aside className="panel"><h2>部署条件</h2><ol className="steps"><li>RAGFlow 必须有公网 HTTPS 地址。</li><li>先在 RAGFlow 配置 LLM 与 Embedding。</li><li>创建目标知识库，再在此选择。</li><li>等待文档解析完成后开始提问。</li></ol><h3>零预算本地恢复</h3><div className="privacy">组员可下载 GitHub 数据并运行一键脚本，把全部知识库恢复到自己的本地 RAGFlow。线上网页仍无法访问 localhost，本地库需通过 RAGFlow 本身使用，或另行建立 HTTPS 隧道。</div><div className="actions"><a className="button secondary" href="https://github.com/cch125/student-assistant/blob/main/TEAM_RESTORE.md" target="_blank" rel="noreferrer"><Download size={17}/>查看恢复步骤</a></div><h3>安全提示</h3><div className="privacy">Vercel 无法访问组员电脑的 localhost。团队共用一套云端 RAGFlow 最方便，也可使用各自的公网实例。</div></aside></div></main>;
 }
