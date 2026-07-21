@@ -30,10 +30,11 @@ test("low-quality retrieval rewrites twice and rejects", async () => {
 
 test("temporary tool failure enters the loop and can recover", async () => {
   let calls = 0;
+  const studentCardChunk = { ...groundedChunk, content: "直接回答：学生证补办请联系学院。\n来源链接：https://jwc.jnu.edu.cn/example" };
   const result = await runRetrievalHarness("学生证如何补办", async () => {
     calls += 1;
     if (calls === 1) throw new Error("temporary failure");
-    return { source: "ragflow", chunks: [groundedChunk] };
+    return { source: "ragflow", chunks: [studentCardChunk] };
   });
   assert.equal(result.ok, true);
   assert.equal(result.retries, 1);
@@ -50,4 +51,19 @@ test("sensitive requests are rejected before retrieval", async () => {
   assert.equal(result.ok, false);
   assert.equal(calls, 0);
   assert.deepEqual(result.trace.map(item => item.node), ["guard_input", "reject"]);
+});
+
+test("rewritten generic terms cannot promote an unrelated official page", async () => {
+  const unrelated = {
+    content: "暨南大学研究生院网站。来源链接：https://gs.jnu.edu.cn/",
+    document_name: "研究生院网站.md",
+    similarity: 0.78
+  };
+  let calls = 0;
+  const result = await runRetrievalHarness("火星校区飞船班次是什么", async () => {
+    calls += 1;
+    return calls === 1 ? { source: "ragflow", chunks: [] } : { source: "ragflow", chunks: [unrelated] };
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "召回内容缺少原问题中的关键事项");
 });

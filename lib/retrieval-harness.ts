@@ -51,6 +51,22 @@ function hasTrustedSource(chunks: RetrievalChunk[]) {
   return chunks.some(chunk => /https?:\/\/(?:[^/]+\.)?jnu\.edu\.cn(?:\/|\s|$)/i.test(contentOf(chunk)));
 }
 
+function hasOriginalQueryEvidence(question: string, chunks: RetrievalChunk[]) {
+  const cleaned = question.toLowerCase()
+    .replace(/暨南大学|暨大|请问|你好|老师好|学生|本科生|研究生|哪里|怎么|如何|什么|是否|可以|需要|官方|办理|申请|下载|材料|时间/g, " ");
+  const terms = cleaned.match(/[\p{Script=Han}a-z0-9]+/gu) || [];
+  const evidence = new Set<string>();
+  for (const term of terms) {
+    if (/^[a-z0-9]+$/.test(term) && term.length >= 3) evidence.add(term);
+    for (let index = 0; index < term.length - 1; index += 1) evidence.add(term.slice(index, index + 2));
+  }
+  const generic = new Set(["校区", "学校", "大学", "事情", "相关", "入口", "来源"]);
+  const candidates = [...evidence].filter(item => !generic.has(item));
+  if (!candidates.length) return true;
+  const corpus = chunks.slice(0, 3).map(contentOf).join(" ").toLowerCase();
+  return candidates.some(item => corpus.includes(item));
+}
+
 function rewriteQuestion(question: string, attempt: number) {
   const normalized = question
     .replace(/^(请问|你好|老师好)[，,：:\s]*/g, "")
@@ -148,6 +164,9 @@ export async function runRetrievalHarness(question: string, retrieve: RunRetriev
     } else if (!hasTrustedSource(state.chunks)) {
       decision = state.attempt < state.maxRetries ? "retry" : "reject";
       reason = "召回结果缺少暨南大学官方来源";
+    } else if (state.attempt > 0 && !hasOriginalQueryEvidence(state.originalQuestion, state.chunks)) {
+      decision = state.attempt < state.maxRetries ? "retry" : "reject";
+      reason = "召回内容缺少原问题中的关键事项";
     }
     return {
       decision,
