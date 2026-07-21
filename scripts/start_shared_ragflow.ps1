@@ -14,7 +14,7 @@ if (-not (Test-Path $Cloudflared)) {
 $deadline = (Get-Date).AddMinutes($WaitMinutes)
 do {
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:8080" -Method Head -TimeoutSec 10
+        $response = Invoke-WebRequest -Uri "http://localhost:8080" -Method Get -UseBasicParsing -TimeoutSec 10
         if ($response.StatusCode -ge 200) {
             break
         }
@@ -32,7 +32,7 @@ $stamp = Get-Date -Format "yyyyMMddHHmmss"
 $stdout = Join-Path $ProjectRoot "outputs\cloudflared-$stamp.out.log"
 $stderr = Join-Path $ProjectRoot "outputs\cloudflared-$stamp.err.log"
 $process = Start-Process -FilePath $Cloudflared `
-    -ArgumentList @("tunnel", "--url", "http://localhost:8080", "--no-autoupdate") `
+    -ArgumentList @("tunnel", "--url", "http://localhost:8080", "--protocol", "http2", "--edge-ip-version", "4", "--no-autoupdate") `
     -WindowStyle Hidden `
     -RedirectStandardOutput $stdout `
     -RedirectStandardError $stderr `
@@ -57,7 +57,7 @@ if (-not $url) {
 $apiDeadline = (Get-Date).AddMinutes(2)
 do {
     try {
-        $response = Invoke-WebRequest -Uri $url -Method Head -TimeoutSec 20
+        $response = Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing -TimeoutSec 20
         if ($response.StatusCode -ge 200) {
             break
         }
