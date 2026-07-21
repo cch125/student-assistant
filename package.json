@@ -1,18 +1,22 @@
 {
   "name": "jnu-student-assistant-web",
-  "version": "0.16.4",
+  "version": "0.17.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:harness": "node --experimental-strip-types --test tests/retrieval-harness.test.ts"
   },
   "dependencies": {
+    "@langchain/core": "^1.2.3",
+    "@langchain/langgraph": "^1.4.8",
+    "lucide-react": "0.468.0",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "lucide-react": "0.468.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "22.19.15",

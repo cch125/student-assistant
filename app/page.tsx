@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, ExternalLink, Search } from "lucide-react";
+import { Camera, CheckCircle2, ExternalLink, RefreshCw, Search, ShieldX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadConnection } from "@/lib/connection";
 
-type Answer = { ok: boolean; answer: string; documentName?: string; similarity?: number; sourceUrl?: string; downloads?: { name: string; url: string }[]; matches?: { documentName: string; similarity: number; snippet: string }[] };
+type HarnessTrace = { node: string; status: "success" | "retry" | "rejected" | "error"; attempt: number; query: string; score?: number; detail: string; durationMs: number };
+type Answer = { ok: boolean; answer: string; documentName?: string; similarity?: number; sourceUrl?: string; downloads?: { name: string; url: string }[]; matches?: { documentName: string; similarity: number; snippet: string }[]; harness?: { retries: number; finalQuery: string; reason: string; trace: HarnessTrace[] } };
+
+const nodeLabels: Record<string,string> = { guard_input:"输入安全检查", retrieve_knowledge:"RAGFlow 检索", quality_check:"Harness 质检", rewrite_query:"问题改写", generate_answer:"生成回答", reject:"拒绝回答" };
 
 export default function AssistantPage() {
   const [question, setQuestion] = useState(""); const [image, setImage] = useState<{ base64: string; mime: string } | null>(null); const [answer, setAnswer] = useState<Answer | null>(null); const [loading, setLoading] = useState(false); const [configured, setConfigured] = useState(false); const [managed,setManaged]=useState(false);
@@ -18,7 +21,7 @@ export default function AssistantPage() {
       <div className="photo-row"><label className="button secondary" htmlFor="query-photo"><Camera size={17}/>添加照片</label><input id="query-photo" hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>chooseImage(e.target.files?.[0])}/><span className="muted">{image?"照片已准备，将先识别再检索":"可上传通知、表格或办事页面截图"}</span></div>
       {managed&&<div className="status-box ok">已连接暨南大学学生助手知识库，可直接查询。</div>}
       {!configured && <div className="status-box error">尚未配置知识库。<Link href="/settings">前往连接与导入</Link></div>}
-      <div className="answer"><h2>回答</h2>{!answer?<p className="muted">查询结果会显示在这里。</p>:<><p className={`answer-text ${answer.ok?"":"error"}`}>{answer.answer}</p>{answer.ok&&<div className="source"><span>{answer.documentName} · 相似度 {Number(answer.similarity||0).toFixed(3)}</span>{answer.sourceUrl&&<a href={answer.sourceUrl} target="_blank" rel="noreferrer">查看官方来源 <ExternalLink size={14}/></a>}</div>}{answer.downloads?.map(item=><a className="button secondary" key={item.url} href={item.url} target="_blank" rel="noreferrer">下载 {item.name} <ExternalLink size={14}/></a>)}{answer.matches?.slice(0,3).map((item,index)=><div className="match" key={`${item.documentName}-${index}`}><strong>{item.documentName} · {item.similarity.toFixed(3)}</strong><div>{item.snippet}</div></div>)}</>}</div>
+      <div className="answer"><h2>回答</h2>{!answer?<p className="muted">查询结果会显示在这里。</p>:<><p className={`answer-text ${answer.ok?"":"error"}`}>{answer.answer}</p>{answer.ok&&<div className="source"><span>{answer.documentName} · 相似度 {Number(answer.similarity||0).toFixed(3)}</span>{answer.sourceUrl&&<a href={answer.sourceUrl} target="_blank" rel="noreferrer">查看官方来源 <ExternalLink size={14}/></a>}</div>}{answer.downloads?.map(item=><a className="button secondary" key={item.url} href={item.url} target="_blank" rel="noreferrer">下载 {item.name} <ExternalLink size={14}/></a>)}{answer.harness&&<details className="harness-trace"><summary>{answer.ok?<CheckCircle2 size={16}/>:<ShieldX size={16}/>}执行过程 · {answer.harness.retries?`重试 ${answer.harness.retries} 次`:"首次通过"}</summary><div className="trace-list">{answer.harness.trace.map((item,index)=><div className={`trace-row ${item.status}`} key={`${item.node}-${index}`}><span className="trace-icon">{item.status==="retry"?<RefreshCw size={15}/>:item.status==="success"?<CheckCircle2 size={15}/>:<ShieldX size={15}/>}</span><div><strong>{nodeLabels[item.node]||item.node}</strong><small>第 {item.attempt+1} 轮{typeof item.score==="number"?` · 分数 ${item.score.toFixed(3)}`:""} · {item.durationMs} ms</small><p>{item.detail}</p>{item.node==="rewrite_query"&&<code>{item.query}</code>}</div></div>)}</div></details>}{answer.matches?.slice(0,3).map((item,index)=><div className="match" key={`${item.documentName}-${index}`}><strong>{item.documentName} · {item.similarity.toFixed(3)}</strong><div>{item.snippet}</div></div>)}</>}</div>
     </section>
     <aside className="panel"><h2>常用问题</h2><div className="dataset-list">{["校巴时间","本科生请假申请表","学生证补办","暑期课程选课时间","校园网申请"].map(item=><button className="button secondary" key={item} onClick={()=>setQuestion(item)}>{item}</button>)}</div><h3>可信回答</h3><div className="privacy">回答来自你所选择的 RAGFlow 知识库。涉及账号密码、个人隐私、医疗诊断和未发布信息时不会推测。</div></aside>
   </div></main>;

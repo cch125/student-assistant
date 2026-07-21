@@ -1,6 +1,6 @@
 # 暨南大学学生助手
 
-当前版本：`v0.16.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
+当前版本：`v0.17.0`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
 
 ## v0 / Vercel Web 版本
 
@@ -58,6 +58,21 @@ python ragflow\export_knowledge_bases.py --workers 8
 - 数据采集、清洗、视觉标注与同步看板
 - 每日自动增量更新
 - 未命中问题记录
+- LangGraph 检索编排、Harness 质量判断与最多两次受控重试
+- 查询执行轨迹可视化，包括每轮查询、分数、耗时和最终决策
+
+## Harness 与 LangGraph
+
+Web 助手使用 LangGraph 组织以下状态流程：
+
+```text
+输入安全检查 -> RAGFlow 检索 -> Harness 质检
+                                  | 通过 -> 生成回答
+                                  | 不通过 -> 改写问题 -> 重新检索
+                                  | 超过两次 -> 拒绝回答
+```
+
+Harness 要求召回分数不低于 `0.2`、正文足以支撑回答并包含暨南大学官方来源。账号密码、个人隐私、具体用药、录取保证和未发布信息在检索前拒绝。每次查询的节点、改写、分数、耗时和决策会显示在回答下方。
 
 当前核心服务卡片覆盖 34 个事项，包含：
 

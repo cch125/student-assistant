@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { isIP } from "node:net";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { runRetrievalHarness, type RetrievalChunk } from "@/lib/retrieval-harness";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -46,11 +47,11 @@ async function validatedConnection(value: Connection | undefined) {
   return { root: `${url.origin}/api/v1`, apiKey, datasetId, noticeDatasetId: String(selected?.noticeDatasetId || ""), managed: Boolean(managed) };
 }
 
-async function ragRequest(connection: Awaited<ReturnType<typeof validatedConnection>>, endpoint: string, init: RequestInit = {}) {
+async function ragRequest(connection: Awaited<ReturnType<typeof validatedConnection>>, endpoint: string, init: RequestInit = {}, timeoutMs = 55000) {
   const response = await fetch(`${connection.root}${endpoint}`, {
     ...init,
     redirect: "manual",
-    signal: AbortSignal.timeout(55000),
+    signal: AbortSignal.timeout(timeoutMs),
     headers: { Authorization: `Bearer ${connection.apiKey}`, ...(init.headers || {}) }
   });
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "RAGFlow 拒绝访问，请检查 API Key。" : `RAGFlow 请求失败（${response.status}）。`);
@@ -107,7 +108,8 @@ async function localCardMatch(question: string) {
     answer: field(best.content, "直接回答"),
     sourceUrl: sourceUrl(best.content),
     downloads: downloads(best.content),
-    snippet: best.content.replace(/^#+\s*/gm, "").replace(/\s+/g, " ").slice(0, 260)
+    snippet: best.content.replace(/^#+\s*/gm, "").replace(/\s+/g, " ").slice(0, 260),
+    content: best.content
   };
 }
 
@@ -188,24 +190,30 @@ export async function POST(request: NextRequest) {
       if (imageBase64) question = `${question}\n${await analyzeImage(imageBase64, String(body.imageMime || "image/jpeg"), question)}`.trim();
       if (!question || question.length > 1200) throw new Error("请输入有效问题。");
       const localMatch = connection.managed ? await localCardMatch(question) : undefined;
-      if (localMatch?.answer) {
-        return NextResponse.json({ ok: true, ...localMatch, matches: [{ documentName: localMatch.documentName, similarity: localMatch.similarity, snippet: localMatch.snippet }] });
-      }
-      const data = await ragRequest(connection, "/retrieval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        dataset_ids: [connection.datasetId],
-        question,
-        page_size: 3,
-        top_k: 20,
-        similarity_threshold: 0.2,
-        vector_similarity_weight: 0.9,
-        rerank_id: process.env.RAGFLOW_RERANK_ID || "BAAI/bge-reranker-v2-m3@default1@OpenAI-API-Compatible",
-        keyword: false,
-        highlight: false
-      }) });
-      const chunks = Array.isArray(data?.chunks) ? data.chunks : []; const top = chunks[0];
-      if (!top || Number(top.similarity || 0) < 0.2) return NextResponse.json({ ok: false, answer: "当前知识库未收录明确材料。为避免误导，我不会猜测答案。", similarity: Number(top?.similarity || 0), matches: [] });
+      const harness = await runRetrievalHarness(question, async (query, attempt) => {
+        if (attempt === 0 && localMatch?.answer) {
+          return { source: "service_card", chunks: [{ content: localMatch.content, document_name: localMatch.documentName, similarity: localMatch.similarity }] };
+        }
+        const datasetIds = [connection.datasetId];
+        if (attempt > 0 && connection.noticeDatasetId) datasetIds.push(connection.noticeDatasetId);
+        const vectorWeights = [0.9, 0.75, 0.6];
+        const data = await ragRequest(connection, "/retrieval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          dataset_ids: datasetIds,
+          question: query,
+          page_size: 5,
+          top_k: attempt === 0 ? 20 : 30,
+          similarity_threshold: 0,
+          vector_similarity_weight: vectorWeights[Math.min(attempt, vectorWeights.length - 1)],
+          rerank_id: process.env.RAGFLOW_RERANK_ID || "BAAI/bge-reranker-v2-m3@default1@OpenAI-API-Compatible",
+          keyword: attempt === 2,
+          highlight: false
+        }) }, 16000);
+        return { source: "ragflow", chunks: Array.isArray(data?.chunks) ? data.chunks as RetrievalChunk[] : [] };
+      });
+      const chunks = harness.chunks; const top = chunks[0];
+      if (!harness.ok || !top) return NextResponse.json({ ok: false, answer: "当前知识库未收录明确材料。为避免误导，我不会猜测答案。", similarity: harness.topScore, matches: [], harness: { retries: harness.retries, finalQuery: harness.finalQuery, reason: harness.reason, trace: harness.trace } });
       const content = String(top.content || top.content_with_weight || ""); const direct = field(content, "直接回答"); const excerpt = content.replace(/^#+\s*/gm, "").replace(/\s+/g, " ").slice(0, 520);
-      return NextResponse.json({ ok: true, answer: direct || `知识库相关原文：${excerpt}`, documentName: top.document_keyword || top.document_name || "知识库材料", similarity: Number(top.similarity || 0), sourceUrl: sourceUrl(content), downloads: downloads(content), matches: chunks.slice(0, 3).map((item: Record<string, unknown>) => ({ documentName: item.document_keyword || item.document_name || "知识库材料", similarity: Number(item.similarity || 0), snippet: String(item.content || item.content_with_weight || "").replace(/\s+/g, " ").slice(0, 260) })) });
+      return NextResponse.json({ ok: true, answer: direct || `知识库相关原文：${excerpt}`, documentName: top.document_keyword || top.document_name || "知识库材料", similarity: Number(top.similarity || 0), sourceUrl: sourceUrl(content), downloads: downloads(content), matches: chunks.slice(0, 3).map(item => ({ documentName: item.document_keyword || item.document_name || "知识库材料", similarity: Number(item.similarity || 0), snippet: String(item.content || item.content_with_weight || "").replace(/\s+/g, " ").slice(0, 260) })), harness: { retries: harness.retries, finalQuery: harness.finalQuery, reason: harness.reason, trace: harness.trace } });
     }
     throw new Error("不支持的操作。");
   } catch (error) {
