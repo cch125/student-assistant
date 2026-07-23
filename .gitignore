@@ -1,10 +1,6 @@
 __pycache__/
 **/__pycache__/
 .venv/
-node_modules/
-.next/
-.vercel/
-*.tsbuildinfo
 *.pyc
 *.pyo
 *.log
@@ -18,5 +14,3 @@ data/feedback/
 outputs/
 tmp/
 !.gitkeep
-
-.vercel/

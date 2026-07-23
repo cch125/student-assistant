@@ -121,14 +121,15 @@ class RagflowClient:
             "name": source["name"],
             "description": source.get("description") or "",
             "permission": "me",
-            "chunk_method": source.get("chunk_method") or "naive",
         }
         if embedding_model:
             payload["embedding_model"] = embedding_model
         if pipeline_id:
             payload.update({"pipeline_id": pipeline_id, "parse_type": 0})
-        elif source.get("parser_config"):
-            payload["parser_config"] = source["parser_config"]
+        else:
+            payload["chunk_method"] = source.get("chunk_method") or "naive"
+            if source.get("parser_config"):
+                payload["parser_config"] = source["parser_config"]
         created = self.request("POST", "/datasets", json=payload)
         return created, True
 

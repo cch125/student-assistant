@@ -16,6 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CLEANED_DOCS = PROJECT_ROOT / "data" / "cleaned" / "documents.jsonl"
 SERVICE_CARDS = PROJECT_ROOT / "data" / "cleaned" / "service_cards"
 MULTIMODAL_DIR = PROJECT_ROOT / "data" / "cleaned" / "multimodal"
+MULTIMODAL_INDEX = PROJECT_ROOT / "data" / "multimodal_index.json"
+KNOWLEDGE_BASE = PROJECT_ROOT / "knowledge_base"
 OUTPUT_JSON = PROJECT_ROOT / "outputs" / "quality_gate.json"
 OUTPUT_MD = PROJECT_ROOT / "outputs" / "quality_gate.md"
 URL_PATTERN = re.compile(r"https?://[^\s|)>\]]+")
@@ -56,6 +58,64 @@ def check_url(url: str) -> dict[str, Any]:
 
 
 def multimodal_findings() -> dict[str, Any]:
+    if MULTIMODAL_INDEX.exists():
+        try:
+            index = json.loads(MULTIMODAL_INDEX.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ValueError, TypeError):
+            index = []
+        if not isinstance(index, list):
+            index = []
+        images: list[dict[str, Any]] = []
+        tables: list[dict[str, Any]] = []
+        missing_assets: list[dict[str, Any]] = []
+        for item in index:
+            if not isinstance(item, dict):
+                continue
+            finding = {
+                "file": MULTIMODAL_INDEX.name,
+                "unit_id": item.get("id"),
+                "page": item.get("page"),
+            }
+            asset_path = str(item.get("asset_path") or "")
+            if asset_path:
+                absolute = (KNOWLEDGE_BASE / asset_path).resolve()
+                resolved = absolute.is_relative_to(KNOWLEDGE_BASE.resolve()) and absolute.is_file()
+                image = {
+                    **finding,
+                    "missing_caption": not bool(item.get("caption")),
+                    "derived_caption": False,
+                    "missing_context": not bool(item.get("context") or item.get("snippet")),
+                    "resolved": resolved,
+                }
+                images.append(image)
+                if not resolved:
+                    missing_assets.append({**finding, "asset_path": asset_path})
+            if item.get("rows") or item.get("is_table"):
+                rows = item.get("rows") or []
+                nonempty_cells = sum(bool(str(cell).strip()) for row in rows for cell in row)
+                tables.append(
+                    {
+                        **finding,
+                        "empty": bool(item.get("rows") is not None) and not rows,
+                        "sparse": bool(rows) and nonempty_cells < 4,
+                        "row_count": len(rows),
+                        "image_only": bool(item.get("is_table") and not item.get("rows")),
+                    }
+                )
+        return {
+            "documents": len({item.get("document") for item in index if isinstance(item, dict)}),
+            "resources": len(index),
+            "images": len(images),
+            "tables": len(tables),
+            "structured_tables": sum(1 for item in tables if not item["image_only"]),
+            "images_missing_caption": [item for item in images if item["missing_caption"]],
+            "images_missing_context": [item for item in images if item["missing_context"]],
+            "images_with_derived_caption": [],
+            "missing_assets": missing_assets,
+            "empty_tables": [item for item in tables if item["empty"]],
+            "sparse_tables": [item for item in tables if item["sparse"]],
+        }
+
     files = sorted(MULTIMODAL_DIR.glob("*.json")) if MULTIMODAL_DIR.exists() else []
     images = []
     tables = []
@@ -88,11 +148,14 @@ def multimodal_findings() -> dict[str, Any]:
                 )
     return {
         "documents": len(files),
+        "resources": len(images) + len(tables),
         "images": len(images),
         "tables": len(tables),
+        "structured_tables": len(tables),
         "images_missing_caption": [item for item in images if item["missing_caption"]],
         "images_missing_context": [item for item in images if item["missing_context"]],
         "images_with_derived_caption": [item for item in images if item.get("derived_caption")],
+        "missing_assets": [],
         "empty_tables": [item for item in tables if item["empty"]],
         "sparse_tables": [item for item in tables if item["sparse"]],
     }
@@ -124,6 +187,10 @@ def build_report(check_links: bool, workers: int) -> dict[str, Any]:
     multimodal = multimodal_findings()
     broken = [item for item in link_results if not item["ok"]]
     warnings = []
+    if not cleaned and not card_paths:
+        warnings.append("未发现传统 cleaned 文档或服务卡片；当前质量检查仅覆盖知识库快照")
+    if not multimodal["resources"]:
+        warnings.append("未发现可检查的多模态资源")
     if broken:
         warnings.append(f"发现 {len(broken)} 个不可访问链接")
     if multimodal["images_missing_caption"]:
@@ -132,6 +199,8 @@ def build_report(check_links: bool, workers: int) -> dict[str, Any]:
         warnings.append(
             f"发现 {len(multimodal['empty_tables'])} 个空表格和 {len(multimodal['sparse_tables'])} 个稀疏表格"
         )
+    if multimodal["missing_assets"]:
+        warnings.append(f"发现 {len(multimodal['missing_assets'])} 个多模态资源文件缺失")
     return {
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary": {
@@ -142,6 +211,8 @@ def build_report(check_links: bool, workers: int) -> dict[str, Any]:
             "broken_urls": len(broken),
             "stale_documents": len(stale),
             "multimodal_documents": multimodal["documents"],
+            "multimodal_resources": multimodal["resources"],
+            "missing_multimodal_assets": len(multimodal["missing_assets"]),
             "warnings": len(warnings),
         },
         "warnings": warnings,
@@ -162,6 +233,8 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- 链接：检查 {summary['checked_urls']}，失败 {summary['broken_urls']}",
         f"- 可能过期文档：{summary['stale_documents']}",
         f"- 多模态文档：{summary['multimodal_documents']}",
+        f"- 多模态资源：{summary['multimodal_resources']}",
+        f"- 缺失资源文件：{summary['missing_multimodal_assets']}",
         "",
         "## 警告",
         "",
@@ -188,7 +261,11 @@ def main() -> None:
     OUTPUT_JSON.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     OUTPUT_MD.write_text(markdown_report(report), encoding="utf-8")
     print(markdown_report(report))
-    if args.strict and report["summary"]["broken_urls"]:
+    if args.strict and (
+        report["summary"]["broken_urls"]
+        or report["summary"]["missing_multimodal_assets"]
+        or not report["summary"]["multimodal_resources"]
+    ):
         raise SystemExit(1)
 
 

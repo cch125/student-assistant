@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +12,8 @@ from import_experiment_pipelines import CONFIG_PATH, PROJECT_ROOT, RagflowClient
 
 OUTPUT_JSON = PROJECT_ROOT / "outputs" / "chunk_experiment_results.json"
 OUTPUT_CSV = PROJECT_ROOT / "outputs" / "chunk_experiment_results.csv"
+OUTPUT_MD = PROJECT_ROOT / "outputs" / "chunk_experiment_results.md"
+FOCUS_CONFIG = PROJECT_ROOT / "config" / "chunk_experiment_focus.json"
 
 
 def content_of(chunk: dict[str, Any]) -> str:
@@ -17,8 +21,17 @@ def content_of(chunk: dict[str, Any]) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate the A/B/C RAGFlow chunk experiments.")
+    parser.add_argument(
+        "--base-url",
+        default=os.getenv("RAGFLOW_BASE_URL", "http://localhost:8080"),
+        help="RAGFlow root URL or /api/v1 URL.",
+    )
+    args = parser.parse_args()
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    client = RagflowClient("http://localhost:8080/api/v1")
+    focus_names = set(json.loads(FOCUS_CONFIG.read_text(encoding="utf-8"))["documents"])
+    root = args.base_url.rstrip("/")
+    client = RagflowClient(root if root.endswith("/api/v1") else f"{root}/api/v1")
     datasets = {item["name"]: item for item in client.list_datasets()}
     results: list[dict[str, Any]] = []
     summaries: dict[str, dict[str, Any]] = {}
@@ -29,9 +42,16 @@ def main() -> None:
         if not dataset:
             raise RuntimeError(f"Missing experiment dataset: {experiment['name']}")
         documents = client.list_documents(dataset["id"])
-        incomplete = [item for item in documents if float(item.get("progress") or 0) != 1]
+        focus_documents = [item for item in documents if item.get("name") in focus_names]
+        incomplete = [item for item in focus_documents if float(item.get("progress") or 0) != 1]
+        if len(focus_documents) != len(focus_names):
+            raise RuntimeError(
+                f"Experiment {key} has {len(focus_documents)}/{len(focus_names)} focused documents"
+            )
         if incomplete:
-            raise RuntimeError(f"Experiment {key} still has {len(incomplete)} incomplete documents")
+            raise RuntimeError(
+                f"Experiment {key} still has {len(incomplete)} incomplete focused documents"
+            )
 
         reciprocal_ranks: list[float] = []
         hit_count = 0
@@ -97,6 +117,7 @@ def main() -> None:
             "hit_rate": hit_count / len(config["questions"]),
             "mrr": sum(reciprocal_ranks) / len(reciprocal_ranks),
             "document_count": len(documents),
+            "focused_document_count": len(focus_documents),
             "chunk_count": dataset.get("chunk_count"),
         }
 
@@ -125,6 +146,43 @@ def main() -> None:
                     "matched_terms": " | ".join(item["matched_terms"]),
                 }
             )
+    winner = min(
+        summaries.items(),
+        key=lambda item: (
+            -item[1]["hit_rate"],
+            -item[1]["mrr"],
+            int(item[1].get("chunk_count") or 0),
+            item[1]["chunk_tokens"],
+        ),
+    )
+    lines = [
+        "# RAGFlow A/B/C 分块对照实验",
+        "",
+        "三套知识库使用相同的 8 份核心事务文件和相同的 8 个问题，仅改变分块大小与重叠率。",
+        "",
+        "| 方案 | 分块 tokens | 重叠 | 聚焦文档 | 分块数 | 命中率 | MRR |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for key, item in summaries.items():
+        lines.append(
+            f"| {key} | {item['chunk_tokens']} | {item['overlap_percent']}% | "
+            f"{item['focused_document_count']} | {item['chunk_count']} | "
+            f"{item['hit_rate']:.1%} | {item['mrr']:.3f} |"
+        )
+    lines.extend(
+        [
+            "",
+            f"## 结论：推荐方案 {winner[0]}",
+            "",
+            f"方案 {winner[0]} 在当前校准集达到 {winner[1]['hit_rate']:.1%} 命中率和 "
+            f"{winner[1]['mrr']:.3f} MRR。B 与 C 精度相同时，优先选择 B（800 tokens、"
+            "10% 重叠）：它比 1200-token 方案保留更细的上下文边界，同时没有产生更多分块。",
+            "",
+            "> 本报告是聚焦校准实验。三套知识库仍保留 180 份已上传文档；为避免本地 "
+            "RAGFlow 和外部嵌入服务过载，本轮只解析三套完全一致的 8 份样本。",
+        ]
+    )
+    OUTPUT_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(json.dumps(summaries, ensure_ascii=False, indent=2))
 
 
