@@ -96,12 +96,13 @@ def analyze_query_image(
   "warning": "模糊、截断或无法确认之处；没有则为空"
 }}
 视觉识别只用于生成检索线索，不要直接回答办事规则、时间或流程。"""
-    selected_model = model or os.getenv("QUERY_VISUAL_MODEL", DEFAULT_MODEL)
-    selected_base = (api_base or os.getenv("SILICONFLOW_API_BASE", DEFAULT_API_BASE)).rstrip("/")
+    selected_model = model or os.getenv("VLM_MODEL") or os.getenv("QUERY_VISUAL_MODEL", DEFAULT_MODEL)
+    selected_base = (api_base or os.getenv("VLM_BASE_URL") or os.getenv("SILICONFLOW_API_BASE", DEFAULT_API_BASE)).rstrip("/")
+    api_key = os.getenv("VLM_API_KEY") or get_siliconflow_api_key()
     response = requests.post(
         f"{selected_base}/chat/completions",
         headers={
-            "Authorization": f"Bearer {get_siliconflow_api_key()}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
         json={

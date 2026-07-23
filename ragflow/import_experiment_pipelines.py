@@ -31,7 +31,8 @@ class RagflowClient:
         self.session.headers.update({"Authorization": f"Bearer {api_key or get_api_key()}"})
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
-        response = self.session.request(method, f"{self.base_url}{path}", timeout=120, **kwargs)
+        timeout = kwargs.pop("timeout", 120)
+        response = self.session.request(method, f"{self.base_url}{path}", timeout=timeout, **kwargs)
         response.raise_for_status()
         payload = response.json()
         if payload.get("code") != 0:

@@ -1,153 +1,58 @@
 # 暨南大学学生助手
 
-## 当前推荐运行方式：FastAPI 本地版
+项目一现已统一为 **FastAPI + LangGraph + RAGFlow** 架构，不再包含或依赖 Next.js。
 
-由于团队暂时没有云服务器，本项目当前推荐使用 FastAPI 本地版进行答辩演示和组员协作。每位组员在自己的电脑上启动 RAGFlow，填写 `.env.local`，再启动学生助手。
+## 已实现功能
 
-```powershell
-python -m pip install -r requirements.txt
-python -m uvicorn app_fastapi:app --host 127.0.0.1 --port 8090
-```
+- 普通用户注册、登录、退出和历史对话
+- 管理员/普通用户角色权限
+- 自然语言学生事务问答
+- RAGFlow 知识库检索、Top-K 召回、来源文档和相似度展示
+- 检索不足时主动拒答
+- 拒答时清空无关来源、相似度和网页按钮
+- 真实 LangGraph 多智能体编排
+- 对话历史回填和 LangGraph 运行检查点
+- GPA/加权平均分工具调用
+- 健康问题安全边界
+- JPG、PNG、WebP 截图识别后再检索知识库
+- Agent 执行日志
+- 本地知识库快照数据看板
+- 图片语义、可见文字、页码及结构化表格的多模态索引
+- 可选文本模型只在证据通过质量门禁后整理答案
+- RAGFlow 配置持久化到 `.env.local`
+- Docker Compose 部署
 
-打开：
+## 快速启动（Windows）
 
-```text
-http://127.0.0.1:8090
-```
+使用前只需要准备：
 
-默认演示账号：
+1. Python 3.11 或 3.12。
+2. 已启动的本机 RAGFlow（默认 `http://localhost:8080`），并在 RAGFlow 中配置好 LLM 与 Embedding 模型。
+3. 一个有效的 RAGFlow API Key。
 
-```text
-cch125 / admin123
-```
-
-详细说明见 [docs/FASTAPI_LOCAL_RUN.md](docs/FASTAPI_LOCAL_RUN.md)。
-
-当前版本：`v0.17.1`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
-
-## v0 / Vercel Web 版本
-
-仓库根目录现已提供 Next.js 全栈 Web 应用，可从 v0 同步并部署到 Vercel：
-
-- `/`：学生助手，支持文字与照片输入。
-- `/pipeline`：GitHub 知识库快照与处理流程看板。
-- `/settings`：组员独立配置 RAGFlow、API Key、知识库、文件上传和项目数据导入。
-
-部署步骤、环境变量和公网 RAGFlow 要求见 [VERCEL.md](VERCEL.md)。Vercel 无法访问个人电脑的 `localhost:8080`，因此组员必须使用公网 HTTPS RAGFlow，或共用一套团队云端 RAGFlow。
-
-这是一个面向暨南大学学生事务的 RAG 助手项目。项目目标不是只提供文档下载，而是把公开官网中的学生常用信息整理成可检索的服务卡片，让学生可以直接询问：
-
-- 请假申请表在哪里下载？
-- 学生证丢了怎么办？
-- 校巴时间是什么？
-- 校园网怎么申请？
-- 图书怎么续借？
-- 食堂几点开门？
-
-如果知识库没有明确来源，助手会拒绝猜测，避免误导学生。
-
-## 版本下载
-
-- [GitHub Releases](https://github.com/cch125/student-assistant/releases)：按版本查看说明并下载 Source code ZIP/TAR.GZ。
-- [GitHub Tags](https://github.com/cch125/student-assistant/tags)：查看全部历史标签和对应源码。
-
-仓库保存代码、配置、可复现说明和经过安全过滤的 RAGFlow 知识库快照。官网爬取缓存、反馈日志、完整 RAGFlow 数据卷和本机密钥不会包含在源码压缩包中。
-
-## 知识库快照
-
-GitHub 仓库中的 [`knowledge_base`](knowledge_base) 目录保存当前 RAGFlow 全部 5 个知识库的可审阅快照：
-
-- 692 份知识库文档及 238 个去重文件原件。
-- 1,138 个完整文本分块。
-- 78 个带 `image_id` 的图片块及 25 个去重原生图片。
-- 数据集配置、文档元数据、关键词、问题、位置和 SHA-256 校验和。
-
-快照不包含账号、密钥、反馈日志或聊天记录。重新连接本机 RAGFlow 后刷新快照：
-
-```powershell
-python ragflow\export_knowledge_bases.py --workers 8
-```
-
-## 当前状态
-
-已跑通第一阶段流程：
-
-- 暨南大学公开网页采集
-- 数据清洗
-- 服务卡片生成
-- RAGFlow 知识库导入
-- 支持文字提问、照片提问、官方附件下载和 MinerU 图片返回
-- RAGFlow 原生图片块与真实 `image_id`
-- 数据采集、清洗、视觉标注与同步看板
-- 每日自动增量更新
-- 未命中问题记录
-- LangGraph 检索编排、Harness 质量判断与最多两次受控重试
-- 查询执行轨迹可视化，包括每轮查询、分数、耗时和最终决策
-
-## Harness 与 LangGraph
-
-Web 助手使用 LangGraph 组织以下状态流程：
+下载或克隆项目后，直接双击根目录的：
 
 ```text
-输入安全检查 -> RAGFlow 检索 -> Harness 质检
-                                  | 通过 -> 生成回答
-                                  | 不通过 -> 改写问题 -> 重新检索
-                                  | 超过两次 -> 拒绝回答
+start.bat
 ```
 
-Harness 要求召回分数不低于 `0.2`、正文足以支撑回答并包含暨南大学官方来源。账号密码、个人隐私、具体用药、录取保证和未发布信息在检索前拒绝。每次查询的节点、改写、分数、耗时和决策会显示在回答下方。
+首次运行只会隐藏询问一次 RAGFlow API Key。脚本会自动：
 
-当前核心服务卡片覆盖 34 个事项，包含：
+- 创建项目专用 `.venv`
+- 安装/更新 Python 依赖
+- 验证 RAGFlow 连接
+- 自动发现核心知识库
+- 缺少知识库时从项目快照恢复“核心服务卡片”和“第一阶段”
+- 自动填写主知识库与补充知识库 ID
+- 将配置保存到不会上传 GitHub 的 `.env.local`
+- 启动 FastAPI 服务
 
-- 文档下载：请假申请表、转专业申请表、复学/休学申请表等
-- 办事流程：学生证补办、成绩单打印、毕业证/学位证补办等
-- 信息查询：校巴时间、校历、校园网、校园卡、图书续借、食堂营业时间等
-- 学生事务扩展：本科休学/复学/退学流程、研究生服务中心、就业手续入口、公费医疗服务指南等
+首次恢复知识库需要上传并解析文档，耗时取决于本机 RAGFlow 和模型速度；解析完成前，问答可能暂时拒答。
 
-## 目录说明
-
-```text
-cleaner/       数据清洗和服务卡片生成
-multimodal/    MinerU 多模态附件清洗
-crawler/       暨南大学公开网页采集
-ragflow/       RAGFlow 导入、检索和测试脚本
-knowledge_base/  可下载、可审阅的 RAGFlow 知识库快照
-scripts/       辅助脚本
-config/        采集配置
-web_app.py     本地问答页面
-visualize_pipeline.py  数据流程可视化看板
-```
-
-以下目录默认不提交到 GitHub：
-
-```text
-data/raw/
-data/files/
-data/cleaned/
-data/feedback/
-outputs/
-```
-
-它们属于本地采集结果、生成物或反馈日志。
-
-## 本地运行
-
-安装依赖：
+也可以在 PowerShell 中运行：
 
 ```powershell
-python -m pip install -r requirements.txt
-```
-
-生成服务卡片：
-
-```powershell
-python cleaner\build_service_cards.py
-```
-
-启动本地问答页面：
-
-```powershell
-python web_app.py
+powershell -ExecutionPolicy Bypass -File .\scripts\run_fastapi.ps1
 ```
 
 浏览器打开：
@@ -156,183 +61,165 @@ python web_app.py
 http://127.0.0.1:8090
 ```
 
-查看流程看板：
+首次打开会进入管理员初始化页面。请创建自己的管理员账号和至少 8 位密码，项目不再内置明文演示密码。
+
+## 手动启动
 
 ```powershell
-python visualize_pipeline.py
+cd "C:\Users\Andy\Desktop\最新\student-assistant-main"
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app_fastapi:app --host 127.0.0.1 --port 8090
 ```
 
-然后打开：
+## RAGFlow 配置
+
+管理员登录后打开：
 
 ```text
-http://127.0.0.1:8090/pipeline
+http://127.0.0.1:8090/settings
 ```
 
-助手与看板是同一个 Web 系统，可通过顶部导航相互切换。团队共享时推荐部署为 HTTPS 网页；内测可先使用 Tailscale 或 Cloudflare Tunnel，正式使用建议部署到固定服务器并配置域名、反向代理和访问控制。
+填写：
 
-学生可以点击“添加照片”上传 JPG、PNG 或 WebP，再补充一句问题；也可以只上传照片。系统先用视觉模型提取脱敏后的画面描述和检索问题，再由 RAGFlow 检索官方知识库。照片不会保存到本机，但会发送给已配置的视觉模型服务，因此不应上传未遮挡的学号、证件号、手机号、账号或密码。
+- RAGFlow API Key
+- RAGFlow 地址（本机默认值不需要修改）
+- 问答知识库 ID（使用一键启动时自动填写）
+- 可选的通知补充知识库 ID
+- 可选的重排模型 ID
+- 可选的文本模型地址、Key 和模型名
 
-覆盖报告 JSON：
+点击保存后立即生效，并写入本机 `.env.local`。页面不会回显 API Key，刷新和重启后不需要重新填写。
+
+需要手动部署时，也可以复制 `.env.example`：
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+除 RAGFlow API Key 外，其余 Key 均为可选：
+
+- `VLM_API_KEY`：启用截图识别。
+- `LLM_API_KEY`：启用检索证据通过后的语言整理。
+- 不配置 VLM/LLM Key 时，普通文字问答仍可使用规则路由和 RAGFlow 原文摘要。
+
+不要将 `.env.local`、API Key 或真实密码提交到代码仓库。
+
+## 页面
+
+- `/`：普通用户与管理员的学生事务问答、截图提问、来源和历史
+- `/agent-logs`：管理员查看 Agent 节点、耗时和结果
+- `/pipeline`：管理员查看 RAGFlow 在线状态及本地知识库快照
+- `/settings`：管理员持久化 RAGFlow 配置
+- `/admin/users`：管理员维护用户角色
+
+## 多智能体流程
 
 ```text
-http://127.0.0.1:8090/api/coverage
+Intent Agent
+  → Router Agent
+      → Retriever Agent
+      → Study Place Agent
+      → Tool Agent
+      → Health Agent
+      → Reject Agent
+  → Reflection Agent
+  → Answer Agent
 ```
 
-## MinerU 多模态清洗
-
-项目使用独立 Python 3.12 环境运行 MinerU，不改动主项目 Python。当前机器的运行目录为：
+检索节点后包含 Quality Harness；不合格结果会改写查询并最多重试两次。编排使用
+Python `langgraph.graph.StateGraph` 与 `MemorySaver` 检查点，运行轨迹会写入：
 
 ```text
-D:\student-assistant-runtime
+data/feedback/agent_traces.jsonl
 ```
 
-环境安装命令：
-
-```powershell
-$env:UV_CACHE_DIR='D:\student-assistant-runtime\uv-cache'
-$env:UV_PYTHON_INSTALL_DIR='D:\student-assistant-runtime\python'
-python -m uv python install 3.12
-python -m uv venv 'D:\student-assistant-runtime\mineru-venv' --python 3.12
-python -m uv pip install --python 'D:\student-assistant-runtime\mineru-venv\Scripts\python.exe' -r requirements-mineru.txt
-& 'D:\student-assistant-runtime\mineru-venv\Scripts\mineru-models-download.exe' --source modelscope --model_type pipeline
-```
-
-解析全部支持的附件并自动导入 RAGFlow 第一阶段综合知识库：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_mineru.ps1
-```
-
-只处理指定附件：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_mineru.ps1 -Path 'data\files\example.pdf'
-```
-
-MinerU 当前处理 PDF、图片、DOCX、PPTX、XLSX。旧 `.doc`、`.xls` 和压缩包会标记为不支持，并继续保留原 RAGFlow 解析结果。成功生成 MinerU 版本后，MinerU Markdown 负责检索；同名原始附件以不解析的方式保留在知识库文件列表中，供查看和下载，同时避免重复分块。
-
-清洗状态、图片数量、结构化 JSON 数量和 RAGFlow 导入结果可在以下页面查看：
+用户、会话和历史记录保存在：
 
 ```text
-http://127.0.0.1:8090/pipeline
+data/feedback/assistant.sqlite3
 ```
 
-MinerU 模型和运行环境不提交 GitHub；项目只提交可复现的安装说明和处理代码。
+密码使用 PBKDF2-SHA256 哈希保存，旧版明文密码在首次启动时自动迁移。
 
-## RAGFlow
+## 图片提问
 
-项目默认连接本机 RAGFlow：
+图片不会保存到项目目录。服务只接受 JPG、PNG、WebP，最大 6 MB，并将图片发送到 `.env.local` 配置的视觉模型服务。视觉模型只生成脱敏后的检索问题，最终答案仍必须由 RAGFlow 官方资料支撑。
+
+所需环境变量：
 
 ```text
-http://localhost:8080
+VLM_BASE_URL=https://api.siliconflow.cn/v1
+VLM_API_KEY=你的视觉模型Key
+VLM_MODEL=Qwen/Qwen2.5-VL-72B-Instruct
 ```
 
-### 数据流水线与分块对照实验
+## 数据看板
 
-先运行 MinerU 后的二次清洗：
+看板会直接读取 `knowledge_base/datasets/*/summary.json`，所以即使 RAGFlow 暂时离线，也能显示项目自带快照中的知识库数、文档数、文本分块和图片分块，不会再出现已导入但看板全为 0 的情况。
+
+## 多模态清洗与关联
+
+`multimodal/build_snapshot_index.py` 会读取知识库快照中的 MinerU/视觉模型结果，按图片
+SHA-256 和表格内容去重，并保留：
+
+- 来源文档、页码、视觉类型和上下文
+- 图片说明、可见文字、检索关键词和建议问题
+- 图片文件的可访问路径
+- HTML 表格转换后的 JSON 行列数据
+
+重建和质量检查：
 
 ```powershell
-python multimodal\postprocess_mineru.py
+.\.venv\Scripts\python.exe .\multimodal\build_snapshot_index.py
+.\.venv\Scripts\python.exe .\scripts\quality_gate.py --strict
 ```
 
-创建或更新 A/B/C 数据流水线知识库，上传同一份清洗语料并解析：
+问答命中相关文档后，页面会在答案下方展示真实图片或可滚动的结构化表格。质量门禁会检查
+断图、缺少说明、空表格和稀疏表格。
+
+完整的核心检索评测配置可离线生成，不会访问 RAGFlow：
 
 ```powershell
-python ragflow\import_experiment_pipelines.py
+.\.venv\Scripts\python.exe .\ragflow\tune_core_retrieval.py --variants 4 --generate-only
 ```
 
-将 MinerU 的图片和表格截图写入 RAGFlow 原生对象存储并生成 `image_id`：
+## 项目报告
+
+- [第三部分：多模态清洗与关联学术报告（PDF）](docs/reports/第三部分_多模态清洗与关联_学术报告.pdf)
+- [第三部分：多模态清洗与关联学术报告（Word）](docs/reports/第三部分_多模态清洗与关联_学术报告.docx)
+
+报告可直接从 GitHub 下载。源文件由 `scripts/build_third_part_academic_report.py` 生成。
+
+## Docker
 
 ```powershell
-python ragflow\sync_native_images.py --datasets A --datasets B --datasets C
+docker compose up --build
 ```
 
-该命令按视觉单元编号幂等同步，并会调用 RAGFlow 图片读取接口验证每个 `image_id`。结果可在 `http://127.0.0.1:8090/pipeline` 的“多模态资源”区域查看。
-
-解析完成后运行固定问题检索对照：
-
-```powershell
-python ragflow\evaluate_chunk_experiments.py
-```
-
-使用 35 个可回答问题和 15 个应拒答问题自动搜索知识库、向量权重与相似度阈值：
-
-```powershell
-python ragflow\tune_retrieval_parameters.py --datasets C --workers 8 --notice-only --apply
-```
-
-已经完成 API 检索时，可以复用原始结果重新评分，并把最优配置写入项目：
-
-```powershell
-python ragflow\tune_retrieval_parameters.py --reuse-results --apply
-```
-
-推荐参数保存在 `config/recommended_retrieval.json`，完整 JSON/Markdown 报告生成在 `outputs` 目录。RAGFlow 的知识库更新接口不接受检索权重和阈值，因此应用在每次检索请求中传入这些参数，不修改知识库本身。
-
-正式核心知识库使用 40 个独立意图扩展出的 160 条问法进行控制变量测试：
-
-```powershell
-python ragflow\tune_core_retrieval.py --workers 8
-```
-
-正式配置保存在 `config/recommended_core_retrieval.json`。助手会自动读取该文件，并在核心卡片没有答案时使用综合知识库做严格阈值的官方原文回退。
-
-三套知识库分别使用 500 tokens/10% 重叠、800 tokens/10% 重叠、1200 tokens/15% 重叠。它们绑定真实的 RAGFlow 数据流水线，因此文件完成解析后会在知识库“日志”页生成记录。实验结果和入口也会显示在：
+打开 `http://127.0.0.1:8090`。如果 RAGFlow 运行在 Windows 宿主机，请在容器配置中使用：
 
 ```text
-http://127.0.0.1:8090/pipeline
+RAGFLOW_BASE_URL=http://host.docker.internal:8080
 ```
 
-核心知识库名称：
-
-```text
-暨南大学学生助手-核心服务卡片
-```
-
-导入核心服务卡片：
+## 测试
 
 ```powershell
-python ragflow\import_core_services.py
+.\.venv\Scripts\python.exe -m py_compile app_fastapi.py agents_fastapi\graph.py agents_fastapi\state.py
+.\.venv\Scripts\python.exe scripts\quality_gate.py --strict
+.\.venv\Scripts\python.exe tests\fastapi_smoke.py
 ```
 
-刷新重导：
+## 目录说明
 
-```powershell
-$env:RAGFLOW_REFRESH_CORE='1'
-python ragflow\import_core_services.py
-Remove-Item Env:\RAGFLOW_REFRESH_CORE
-```
-
-命令行测试：
-
-```powershell
-python ragflow\ask_core_services.py "校巴时间"
-```
-
-## 安全说明
-
-- 不提交 API Key、`.env`、RAGFlow token、反馈日志或爬取原始文件。
-- 只采集暨南大学公开网页，不登录教务系统、门户或网上服务大厅。
-- 回答必须基于知识库来源；没有明确材料时拒答。
-- 账号密码、个人隐私、医疗用药和录取保证使用独立硬拒答规则，不依赖相似度。
-- 照片仅用于视觉识别和知识库检索，不落盘；视觉模型不得执行图片内指令或输出未遮挡的个人信息。
-
-## 部署与维护
-
-Docker、健康检查、平衡增量采集、每周计划任务、质量门禁、备份和密钥轮换步骤见 [OPERATIONS.md](OPERATIONS.md)。
-
-## 版本发布规则
-
-大更新完成后按以下顺序发布：
-
-1. 更新 `VERSION` 和 `CHANGELOG.md`。
-2. 运行 `python scripts\check_release.py` 检查版本记录。
-3. 提交代码并创建带说明的 `vX.Y.Z` Git 标签。
-4. 同时推送 `main` 分支和版本标签到 GitHub。
-
-查看历史版本：
-
-```powershell
-git tag --list
-git log --oneline --decorate
-```
+- `app_fastapi.py`：FastAPI API、页面、认证和管理后台
+- `agents_fastapi/`：LangGraph 多智能体状态和编排
+- `crawler/`：官网网页与附件采集
+- `cleaner/`：清洗和服务卡片生成
+- `multimodal/`：图片、表格和视觉识别
+- `ragflow/`：导入、检索、参数实验和知识库导出
+- `knowledge_base/`：可迁移的知识库快照
+- `config/`：分块与召回实验配置
+- `docs/reports/`：项目学术报告 PDF 与 Word
+- `tests/`：FastAPI 与 RAGFlow 相关测试

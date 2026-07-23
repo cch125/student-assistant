@@ -121,14 +121,15 @@ class RagflowClient:
             "name": source["name"],
             "description": source.get("description") or "",
             "permission": "me",
-            "chunk_method": source.get("chunk_method") or "naive",
         }
         if embedding_model:
             payload["embedding_model"] = embedding_model
         if pipeline_id:
             payload.update({"pipeline_id": pipeline_id, "parse_type": 0})
-        elif source.get("parser_config"):
-            payload["parser_config"] = source["parser_config"]
+        else:
+            payload["chunk_method"] = source.get("chunk_method") or "naive"
+            if source.get("parser_config"):
+                payload["parser_config"] = source["parser_config"]
         created = self.request("POST", "/datasets", json=payload)
         return created, True
 
@@ -280,7 +281,10 @@ def restore_dataset(
             config["shared_parser_config"],
         )
         pipeline_id = client.ensure_pipeline(title, dsl)
-    embedding_model = embedding_model_override or source.get("embedding_model")
+    # Let the target RAGFlow use its configured default embedding model unless
+    # the operator explicitly requests one. Snapshot provider/model identifiers
+    # are not portable across teammates' RAGFlow installations.
+    embedding_model = embedding_model_override
     dataset, created = client.ensure_dataset(source, pipeline_id, embedding_model)
     dataset_id = str(dataset["id"])
     existing = {str(item.get("name")) for item in client.list_documents(dataset_id)}

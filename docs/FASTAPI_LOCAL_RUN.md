@@ -1,84 +1,36 @@
-# FastAPI 本地演示与组员协作说明
+# FastAPI 本地运行说明
 
-本项目当前推荐使用 FastAPI 本地版进行演示。由于团队没有云服务器，RAGFlow 仍运行在每位组员自己的电脑上，学生助手通过本机配置连接本机 RAGFlow。
+项目已统一为 FastAPI，不再需要 Node.js、npm、pnpm 或 Next.js。
 
-## 运行方式
+## 一键启动
 
-### 方式一：Python 直接运行
+直接双击项目根目录的：
+
+```text
+start.bat
+```
+
+首次运行只需输入一次 RAGFlow API Key。脚本会自动创建虚拟环境、安装依赖、发现或恢复核心知识库、填写知识库 ID、生成 `.env.local` 并启动服务。
+
+前提是本机 `http://localhost:8080` 上的 RAGFlow 已启动，并已配置 LLM 与 Embedding 模型。
+
+命令行方式：
 
 ```powershell
-python -m pip install -r requirements.txt
-python -m uvicorn app_fastapi:app --host 127.0.0.1 --port 8090
+powershell -ExecutionPolicy Bypass -File .\scripts\run_fastapi.ps1
 ```
 
-打开：
+启动完成后访问 `http://127.0.0.1:8090`。
 
-```text
-http://127.0.0.1:8090
-```
+第一次访问会要求创建管理员；后续普通用户可从登录页注册。
 
-### 方式二：Docker Compose
+管理员仍可在 `/settings` 中修改 RAGFlow、VLM 或 LLM 配置。配置会保存到 `.env.local` 并立即生效。
 
-```powershell
-docker compose -f compose.yaml up --build
-```
+## 页面权限
 
-打开：
+- 普通用户：智能问答、图片提问、来源引用、历史记录
+- 管理员：包含普通用户功能，并可访问 Agent 日志、数据看板、连接配置、用户管理
 
-```text
-http://127.0.0.1:8090
-```
+## 停止
 
-## 默认演示账号
-
-```text
-账号：cch125
-密码：admin123
-```
-
-这是本地演示账号。正式使用时应替换为学校统一认证，或至少修改本地 SQLite 数据库中的账号密码。
-
-## 必要配置
-
-复制 `.env.example` 为 `.env.local`，填写自己的 RAGFlow 和模型配置：
-
-```text
-RAGFLOW_BASE_URL=http://localhost:8080
-RAGFLOW_API_KEY=你的 RAGFlow API Key
-RAGFLOW_DATASET_ID=主知识库 ID
-RAGFLOW_NOTICE_DATASET_ID=通知/补充知识库 ID
-```
-
-不要把 `.env.local` 上传到 GitHub。
-
-## 页面入口
-
-- `/`：学生问答助手
-- `/agent-logs`：Agent 执行日志
-- `/pipeline`：数据清洗与知识库看板
-- `/settings`：连接配置状态
-
-## 当前 Agent 链路
-
-```text
-Intent Agent
-  -> Router Agent
-      -> Study Place Agent / Health Agent / Retriever Agent / Tool Agent / Reject Agent
-  -> Reflection Agent
-  -> Answer Agent
-```
-
-系统会记录每次提问经过的节点、耗时、分数和最终决策，用于答辩展示。
-
-## 无服务器协作方案
-
-每位组员：
-
-1. 从 GitHub 下载代码。
-2. 本机启动 RAGFlow。
-3. 导入项目提供的清洗数据或知识库快照。
-4. 填写 `.env.local`。
-5. 启动 FastAPI 学生助手。
-
-这种方案不需要购买云服务器，但每台电脑都需要各自配置 RAGFlow 和 API Key。
-
+在启动服务的 PowerShell 窗口按 `Ctrl+C`。
