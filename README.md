@@ -24,14 +24,38 @@
 
 ## 快速启动（Windows）
 
-在 PowerShell 中运行：
+使用前只需要准备：
+
+1. Python 3.11 或 3.12。
+2. 已启动的本机 RAGFlow（默认 `http://localhost:8080`），并在 RAGFlow 中配置好 LLM 与 Embedding 模型。
+3. 一个有效的 RAGFlow API Key。
+
+下载或克隆项目后，直接双击根目录的：
+
+```text
+start.bat
+```
+
+首次运行只会隐藏询问一次 RAGFlow API Key。脚本会自动：
+
+- 创建项目专用 `.venv`
+- 安装/更新 Python 依赖
+- 验证 RAGFlow 连接
+- 自动发现核心知识库
+- 缺少知识库时从项目快照恢复“核心服务卡片”和“第一阶段”
+- 自动填写主知识库与补充知识库 ID
+- 将配置保存到不会上传 GitHub 的 `.env.local`
+- 启动 FastAPI 服务
+
+首次恢复知识库需要上传并解析文档，耗时取决于本机 RAGFlow 和模型速度；解析完成前，问答可能暂时拒答。
+
+也可以在 PowerShell 中运行：
 
 ```powershell
-cd "C:\Users\Andy\Desktop\最新\student-assistant-main"
 powershell -ExecutionPolicy Bypass -File .\scripts\run_fastapi.ps1
 ```
 
-脚本会自动创建 `.venv`、安装依赖并启动服务。浏览器打开：
+浏览器打开：
 
 ```text
 http://127.0.0.1:8090
@@ -58,20 +82,26 @@ http://127.0.0.1:8090/settings
 
 填写：
 
-- RAGFlow 地址，例如 `http://localhost:8080`
 - RAGFlow API Key
-- 问答知识库 ID
+- RAGFlow 地址（本机默认值不需要修改）
+- 问答知识库 ID（使用一键启动时自动填写）
 - 可选的通知补充知识库 ID
 - 可选的重排模型 ID
 - 可选的文本模型地址、Key 和模型名
 
 点击保存后立即生效，并写入本机 `.env.local`。页面不会回显 API Key，刷新和重启后不需要重新填写。
 
-也可以复制 `.env.example`：
+需要手动部署时，也可以复制 `.env.example`：
 
 ```powershell
 Copy-Item .env.example .env.local
 ```
+
+除 RAGFlow API Key 外，其余 Key 均为可选：
+
+- `VLM_API_KEY`：启用截图识别。
+- `LLM_API_KEY`：启用检索证据通过后的语言整理。
+- 不配置 VLM/LLM Key 时，普通文字问答仍可使用规则路由和 RAGFlow 原文摘要。
 
 不要将 `.env.local`、API Key 或真实密码提交到代码仓库。
 
@@ -154,6 +184,13 @@ SHA-256 和表格内容去重，并保留：
 .\.venv\Scripts\python.exe .\ragflow\tune_core_retrieval.py --variants 4 --generate-only
 ```
 
+## 项目报告
+
+- [第三部分：多模态清洗与关联学术报告（PDF）](docs/reports/第三部分_多模态清洗与关联_学术报告.pdf)
+- [第三部分：多模态清洗与关联学术报告（Word）](docs/reports/第三部分_多模态清洗与关联_学术报告.docx)
+
+报告可直接从 GitHub 下载。源文件由 `scripts/build_third_part_academic_report.py` 生成。
+
 ## Docker
 
 ```powershell
@@ -184,4 +221,5 @@ RAGFLOW_BASE_URL=http://host.docker.internal:8080
 - `ragflow/`：导入、检索、参数实验和知识库导出
 - `knowledge_base/`：可迁移的知识库快照
 - `config/`：分块与召回实验配置
+- `docs/reports/`：项目学术报告 PDF 与 Word
 - `tests/`：FastAPI 与 RAGFlow 相关测试
