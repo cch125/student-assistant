@@ -67,3 +67,16 @@ test("rewritten generic terms cannot promote an unrelated official page", async 
   assert.equal(result.ok, false);
   assert.equal(result.reason, "召回内容缺少原问题中的关键事项");
 });
+
+test("specific object questions reject unrelated opening-hour pages", async () => {
+  const result = await runRetrievalHarness("游泳池开放时间", async () => ({
+    source: "ragflow",
+    chunks: [{
+      content: "开馆时间 来源：https://lib.jnu.edu.cn/home/servicedetail/145 部门：图书馆 石牌校区：7:00-22:30",
+      document_name: "开馆时间.md",
+      similarity: 0.5
+    }]
+  }));
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /核心对象/);
+});

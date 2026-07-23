@@ -2,6 +2,26 @@
 
 本项目采用语义化版本号。每次大更新都会保留 Git 提交历史、创建版本标签并推送到 GitHub，因此可以随时查看或恢复之前的版本。
 
+## [0.18.0] - 2026-07-23
+
+### 新增
+
+- 新增 FastAPI 本地演示主入口 `app_fastapi.py`，不再依赖云服务器即可运行学生助手、Agent 日志页、数据看板和连接配置页。
+- 新增 `agents_fastapi` 多智能体编排包，包含 Intent、Router、Study Place、Health、Retriever、Reflection 和 Answer 等显式 Agent 节点。
+- 新增 SQLite 本地登录、Session、历史对话保存能力，默认演示账号为 `cch125 / admin123`。
+- 新增 Agent 可视化日志接口与页面，记录每次提问的节点、耗时、状态、相似度和最终决策。
+- 新增 FastAPI 本地运行说明 `docs/FASTAPI_LOCAL_RUN.md` 和一键启动脚本 `scripts/run_fastapi.ps1`。
+
+### 改进
+
+- 学习地点类口语问题会被 Intent Agent 补全为“找学习/自习地点”，优先返回图书馆开放时间等高可信资料。
+- 健康类问题进入 Health Agent，不替代诊断、不推荐具体用药，并引导学生补充校区、是否发烧、校医室地址或报销流程等信息。
+- Dockerfile 和 Compose 默认启动 FastAPI，Compose 同时支持 `.env` 与 `.env.local`，适合组员本地协作。
+
+### 验证
+
+- 新增 `tests/fastapi_smoke.py`，覆盖学习地点语义识别和健康问题安全边界。
+
 ## [0.17.1] - 2026-07-21
 
 ### 修复

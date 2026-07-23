@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "test:harness": "node --experimental-strip-types --test tests/retrieval-harness.test.ts"
+    "test:harness": "node --experimental-strip-types --test tests/retrieval-harness.test.ts tests/student-agents.test.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.3",

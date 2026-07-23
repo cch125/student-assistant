@@ -44,7 +44,7 @@ const GraphState = Annotation.Root({
 });
 
 function contentOf(chunk?: RetrievalChunk) {
-  return String(chunk?.content || chunk?.content_with_weight || "");
+  return [chunk?.document_keyword, chunk?.document_name, chunk?.content, chunk?.content_with_weight].filter(Boolean).join(" ");
 }
 
 function hasTrustedSource(chunks: RetrievalChunk[]) {
@@ -65,6 +65,24 @@ function hasOriginalQueryEvidence(question: string, chunks: RetrievalChunk[]) {
   if (!candidates.length) return true;
   const corpus = chunks.slice(0, 3).map(contentOf).join(" ").toLowerCase();
   return candidates.some(item => corpus.includes(item));
+}
+
+function missingSpecificObject(question: string, chunks: RetrievalChunk[]) {
+  const normalized = question.toLowerCase().replace(/\s+/g, "");
+  const corpus = chunks.slice(0, 3).map(contentOf).join(" ").toLowerCase();
+  const objectRules = [
+    { triggers: ["游泳池", "泳池", "游泳馆"], evidence: ["游泳", "泳池", "游泳馆"] },
+    { triggers: ["图书馆", "图书", "借书", "续借"], evidence: ["图书馆", "图书", "借阅", "续借"] },
+    { triggers: ["食堂", "饭堂", "餐厅"], evidence: ["食堂", "饭堂", "餐厅", "餐饮"] },
+    { triggers: ["校巴", "班车", "校车"], evidence: ["校巴", "班车", "校车", "发车"] },
+    { triggers: ["校园网", "网络", "wifi", "无线网"], evidence: ["校园网", "网络", "wifi", "无线"] },
+    { triggers: ["请假"], evidence: ["请假"] },
+    { triggers: ["学生证"], evidence: ["学生证"] },
+    { triggers: ["转专业"], evidence: ["转专业"] }
+  ];
+  const rule = objectRules.find(item => item.triggers.some(trigger => normalized.includes(trigger)));
+  if (!rule) return "";
+  return rule.evidence.some(term => corpus.includes(term)) ? "" : `召回内容没有覆盖问题中的核心对象：${rule.triggers[0]}`;
 }
 
 function rewriteQuestion(question: string, attempt: number) {
@@ -164,6 +182,9 @@ export async function runRetrievalHarness(question: string, retrieve: RunRetriev
     } else if (!hasTrustedSource(state.chunks)) {
       decision = state.attempt < state.maxRetries ? "retry" : "reject";
       reason = "召回结果缺少暨南大学官方来源";
+    } else if (missingSpecificObject(state.originalQuestion, state.chunks)) {
+      decision = state.attempt < state.maxRetries ? "retry" : "reject";
+      reason = missingSpecificObject(state.originalQuestion, state.chunks);
     } else if (state.attempt > 0 && !hasOriginalQueryEvidence(state.originalQuestion, state.chunks)) {
       decision = state.attempt < state.maxRetries ? "retry" : "reject";
       reason = "召回内容缺少原问题中的关键事项";

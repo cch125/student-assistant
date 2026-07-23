@@ -1,5 +1,28 @@
 # 暨南大学学生助手
 
+## 当前推荐运行方式：FastAPI 本地版
+
+由于团队暂时没有云服务器，本项目当前推荐使用 FastAPI 本地版进行答辩演示和组员协作。每位组员在自己的电脑上启动 RAGFlow，填写 `.env.local`，再启动学生助手。
+
+```powershell
+python -m pip install -r requirements.txt
+python -m uvicorn app_fastapi:app --host 127.0.0.1 --port 8090
+```
+
+打开：
+
+```text
+http://127.0.0.1:8090
+```
+
+默认演示账号：
+
+```text
+cch125 / admin123
+```
+
+详细说明见 [docs/FASTAPI_LOCAL_RUN.md](docs/FASTAPI_LOCAL_RUN.md)。
+
 当前版本：`v0.17.1`。每次大更新都会同步更新 [CHANGELOG.md](CHANGELOG.md)、创建 Git 标签和 GitHub Release，旧版本可从 Releases 或 Tags 下载。
 
 ## v0 / Vercel Web 版本
